@@ -1,0 +1,79 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "iot-dashboard",
+    "title": "IoT Sensor Dashboard",
+    "tags": ["iot", "sensors", "monitoring"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "5s",
+    "panels": [
+      {
+        "id": 1,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "type": "graph",
+        "title": "Average Temperature by Sensor",
+        "targets": [
+          {
+            "datasource": "ClickHouse",
+            "rawSql": "SELECT window_start as time, sensor_id, avg_temperature FROM iot.sensor_metrics WHERE window_start > now() - INTERVAL 1 HOUR ORDER BY time",
+            "format": "time_series"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "type": "graph",
+        "title": "Average Humidity by Location",
+        "targets": [
+          {
+            "datasource": "ClickHouse",
+            "rawSql": "SELECT window_start as time, location, avg_humidity FROM iot.sensor_metrics WHERE window_start > now() - INTERVAL 1 HOUR ORDER BY time",
+            "format": "time_series"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "type": "table",
+        "title": "Recent Alerts",
+        "targets": [
+          {
+            "datasource": "ClickHouse",
+            "rawSql": "SELECT sensor_id, location, alert_type, temperature, humidity, battery_level, alert_time FROM iot.sensor_alerts WHERE alert_type != 'NORMAL' AND alert_time > now() - INTERVAL 1 HOUR ORDER BY alert_time DESC LIMIT 50",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "type": "stat",
+        "title": "Sensor Statistics",
+        "targets": [
+          {
+            "datasource": "ClickHouse",
+            "rawSql": "SELECT COUNT(DISTINCT sensor_id) as active_sensors FROM iot.sensor_metrics WHERE window_start > now() - INTERVAL 5 MINUTE",
+            "format": "table"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+        "type": "graph",
+        "title": "Battery Levels",
+        "targets": [
+          {
+            "datasource": "ClickHouse",
+            "rawSql": "SELECT window_start as time, sensor_id, min_battery FROM iot.sensor_metrics WHERE window_start > now() - INTERVAL 1 HOUR ORDER BY time",
+            "format": "time_series"
+          }
+        ]
+      }
+    ]
+  }
+}

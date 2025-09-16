@@ -1,0 +1,136 @@
+version: '3.8'
+
+services:
+  # Apache Pulsar
+  pulsar:
+    image: apachepulsar/pulsar:3.1.0
+    container_name: pulsar-standalone
+    ports:
+      - "6650:6650"
+      - "8080:8080"
+    command: bin/pulsar standalone
+    volumes:
+      - pulsar-data:/pulsar/data
+    environment:
+      - PULSAR_MEM=-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m
+    networks:
+      - iot-network
+
+  # Apache Flink
+  flink-jobmanager:
+    image: flink:1.18.0
+    container_name: flink-jobmanager
+    ports:
+      - "8081:8081"
+      - "6123:6123"
+    command: jobmanager
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
+      - FLINK_PROPERTIES=jobmanager.rpc.address:flink-jobmanager
+    volumes:
+      - flink-data:/opt/flink/data
+      - ../flink-consumer/target:/opt/flink/jars
+    networks:
+      - iot-network
+
+  flink-taskmanager:
+    image: flink:1.18.0
+    container_name: flink-taskmanager
+    depends_on:
+      - flink-jobmanager
+    command: taskmanager
+    scale: 2
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
+      - TASK_MANAGER_NUMBER_OF_TASK_SLOTS=2
+      - FLINK_PROPERTIES=jobmanager.rpc.address:flink-jobmanager
+    volumes:
+      - flink-data:/opt/flink/data
+      - ../flink-consumer/target:/opt/flink/jars
+    networks:
+      - iot-network
+
+  # ClickHouse
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8
+    container_name: clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ../scripts/clickhouse-init.sql:/docker-entrypoint-initdb.d/init.sql
+    environment:
+      - CLICKHOUSE_DB=iot
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 262144
+        hard: 262144
+    networks:
+      - iot-network
+
+  # Grafana for visualization (optional)
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ../config/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/iot-dashboard.json
+    depends_on:
+      - clickhouse
+    networks:
+      - iot-network
+
+  # IoT Data Producer
+  iot-producer:
+    build:
+      context: ../producer
+      dockerfile: Dockerfile
+    container_name: iot-producer
+    depends_on:
+      - pulsar
+    environment:
+      - PULSAR_URL=pulsar://pulsar:6650
+      - PULSAR_TOPIC=persistent://public/default/iot-sensor-data
+    networks:
+      - iot-network
+    restart: unless-stopped
+
+  # Flink Job Submitter (runs once to submit the job)
+  flink-job-submit:
+    image: flink:1.18.0
+    container_name: flink-job-submit
+    depends_on:
+      - flink-jobmanager
+      - pulsar
+      - clickhouse
+    volumes:
+      - ../flink-consumer/target:/opt/flink/jars
+    command: >
+      sh -c "sleep 30 && 
+             flink run -m flink-jobmanager:8081 
+             /opt/flink/jars/flink-consumer-1.0.0.jar"
+    environment:
+      - PULSAR_URL=pulsar://pulsar:6650
+      - PULSAR_TOPIC=persistent://public/default/iot-sensor-data
+      - CLICKHOUSE_URL=jdbc:clickhouse://clickhouse:8123/iot
+    networks:
+      - iot-network
+
+volumes:
+  pulsar-data:
+  flink-data:
+  clickhouse-data:
+  grafana-data:
+
+networks:
+  iot-network:
+    driver: bridge
