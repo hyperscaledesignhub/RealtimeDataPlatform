@@ -34,7 +34,7 @@ Create the AWS infrastructure (VPC, EKS cluster, cost-optimized node groups).
 
 ```bash
 # Navigate to infrastructure directory
-cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/aws-infra-50k-mps
+cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/realtime-platform-50k-events
 
 # Initialize Terraform (downloads providers and modules)
 terraform init
@@ -502,7 +502,7 @@ Here's the complete sequence for easy copy-paste:
 # ============================================================================
 
 # Step 1: Deploy Infrastructure
-cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/aws-infra-50k-mps
+cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/realtime-platform-50k-events
 terraform init
 terraform plan
 terraform apply  # Type 'yes'
@@ -738,7 +738,7 @@ helm uninstall pulsar -n pulsar
 kubectl delete namespace pulsar
 
 # Then destroy Terraform infrastructure
-cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/aws-infra-50k-mps
+cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/realtime-platform-50k-events
 terraform destroy  # Type 'yes'
 ```
 
@@ -808,7 +808,7 @@ After deployment:
 
 If you need higher throughput (250K+ msg/sec):
 
-1. See `../aws-infra-1milion-mps/` for high-scale configuration
+1. See `../realtime-platform-1million-events/` for high-scale configuration
 2. Main differences:
    - Larger instances (c5/r6id vs t3)
    - NVMe storage (vs EBS)

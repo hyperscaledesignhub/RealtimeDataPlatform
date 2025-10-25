@@ -32,7 +32,7 @@ Create the AWS infrastructure (VPC, EKS cluster, node groups).
 
 ```bash
 # Navigate to infrastructure directory
-cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/aws-infra-1milion-mps
+cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/realtime-platform-1million-events
 
 # Initialize Terraform (downloads providers and modules)
 terraform init
@@ -473,7 +473,7 @@ Here's the complete sequence in one place for easy copy-paste:
 # ============================================================================
 
 # Step 1: Deploy Infrastructure
-cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/aws-infra-1milion-mps
+cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/realtime-platform-1million-events
 terraform init
 terraform plan
 terraform apply  # Type 'yes'
@@ -687,7 +687,7 @@ helm uninstall pulsar -n pulsar
 kubectl delete namespace pulsar
 
 # Then destroy Terraform infrastructure
-cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/aws-infra-1milion-mps
+cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/realtime-platform-1million-events
 terraform destroy  # Type 'yes'
 ```
 

@@ -447,6 +447,6 @@ For issues:
 ## Upgrade Path
 
 To upgrade to the 1M msg/sec setup:
-1. See `../aws-infra-1milion-mps/` for high-scale configuration
+1. See `../realtime-platform-1million-events/` for high-scale configuration
 2. Main differences: Larger instances, NVMe storage, more replicas
 3. Migration guide available in deployment runbook

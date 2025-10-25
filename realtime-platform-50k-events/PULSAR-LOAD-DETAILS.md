@@ -227,7 +227,7 @@ kubectl exec -n pulsar pulsar-toolset-0 -- \
 pulsar_broker_desired_size = 4
 
 # Apply
-cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/aws-infra-50k-mps
+cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/realtime-platform-50k-events
 terraform apply
 ```
 
@@ -257,7 +257,7 @@ terraform apply
 
 ### 1. Provision Infrastructure
 ```bash
-cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/aws-infra-50k-mps
+cd /Users/vijayabhaskarv/IOT/github/RealtimeDataPlatform/realtime-platform-50k-events
 terraform apply
 ```
 

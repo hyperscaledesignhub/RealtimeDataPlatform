@@ -43,7 +43,7 @@ producer-load/
 
 ### Local Build
 ```bash
-cd aws-infra-1milion-mps/producer-load
+cd realtime-platform-1million-events/producer-load
 docker build -f Dockerfile.perf -t iot-producer-perf:latest .
 ```
 

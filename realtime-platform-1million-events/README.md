@@ -460,7 +460,7 @@ This section provides a high-level overview. For production deployment, follow t
 ### Step 1: Deploy Infrastructure
 
 ```bash
-cd aws-infra-1milion-mps
+cd realtime-platform-1million-events
 
 # Initialize Terraform
 terraform init
@@ -810,7 +810,7 @@ kubectl delete clickhouseinstallation iot-cluster-repl -n clickhouse
 
 ```bash
 # WARNING: This deletes everything including data
-cd aws-infra-1milion-mps
+cd realtime-platform-1million-events
 terraform destroy
 ```
 
@@ -906,7 +906,7 @@ Deep dive into each component:
 ### Navigation Map
 
 ```
-aws-infra-1milion-mps/
+realtime-platform-1million-events/
 │
 ├── README.md (You are here!)
 │   └── High-level architecture and overview
