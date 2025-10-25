@@ -19,6 +19,11 @@
 *.tar.gz
 *.rar
 
+# EXCEPTION: Allow compiled files in libs directories (required for Docker builds)
+!**/libs/**/*.class
+!**/libs/**/*.jar
+!**/libs/
+
 # Virtual machine crash logs
 hs_err_pid*
 replay_pid*
