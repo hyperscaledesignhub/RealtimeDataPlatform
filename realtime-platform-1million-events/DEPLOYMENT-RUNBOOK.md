@@ -369,9 +369,9 @@ cd ../producer-load
 ```
 
 **What this deploys:**
-- Producer pods: 3+ instances
+- Producer pods: 4 instances
 - Each pod: 250K messages/second
-- Total throughput: 750K+ messages/second
+- Total throughput: 1 million messages/second
 - AVRO-encoded event messages to Pulsar
 - Adaptable for any domain (e-commerce, finance, IoT, gaming, etc.)
 
@@ -701,16 +701,16 @@ After successful deployment, you should see:
 
 **Producer:**
 - 250K messages/second per pod
-- 750K+ messages/second total (3 pods)
+- 1 million messages/second total (4 pods)
 
 **Pulsar:**
-- Message rate in: 750K+ msg/sec
+- Message rate in: 1M msg/sec
 - Storage: Growing based on retention
 - Latency: <10ms p99
 
 **Flink:**
-- Input: 750K records/second
-- Output: ~12,000-15,000 aggregated records/minute (1-min windows)
+- Input: 1M records/second
+- Output: ~15,000-20,000 aggregated records/minute (1-min windows)
 - Checkpoints: Completing every 1 minute
 - Backpressure: Low to none
 
@@ -741,7 +741,7 @@ After deployment:
 
 You now have a fully operational, high-throughput event streaming platform with:
 
-✅ Real-time data ingestion (750K+ msg/sec)  
+✅ Real-time data ingestion (1 million msg/sec)  
 ✅ Stream processing with aggregation  
 ✅ Persistent storage in analytics database  
 ✅ Complete monitoring and visualization  
