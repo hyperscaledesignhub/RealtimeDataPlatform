@@ -1,31 +1,32 @@
 # ================================================================================
-# Dockerfile for IoT Performance Producer (pulsar-sensor-perf)
-# Uses the compiled pulsar-testclient with IoTPerformanceProducer
-# 
-# Features:
-# - AVRO serialization format by default
-# - Automatic device ID distribution across multiple pods
-# - Built-in SensorData.avsc schema included
-# - Environment variables for configuration:
-#   - PULSAR_URL: Pulsar service URL
-#   - PULSAR_TOPIC: Target topic name
-#   - MESSAGE_RATE: Messages per second per pod
-#   - TOTAL_DEVICE_COUNT: Total number of devices
-#   - NUM_REPLICAS: Number of pod replicas for device distribution
-#   - USE_AVRO: Enable/disable AVRO serialization
-# 
-# Device ID Distribution:
-# - Automatically calculates device ID ranges per pod
-# - Pod 0: Devices 1 to (TOTAL_DEVICE_COUNT/NUM_REPLICAS)
-# - Pod 1: Devices (TOTAL_DEVICE_COUNT/NUM_REPLICAS)+1 to (2*TOTAL_DEVICE_COUNT/NUM_REPLICAS)
-# - And so on...
-# 
-# Usage Examples:
-# Default AVRO: docker run producer-perf:latest
-# Custom topic: docker run producer-perf:latest "persistent://public/default/my-topic"
-# Kubernetes: kubectl apply -f producer-deployment-perf.yaml
+# Multi-Stage Dockerfile for IoT Performance Producer (pulsar-sensor-perf)
+# Builds from Apache Pulsar 4.1.1 source with custom IoTPerformanceProducer
 # ================================================================================
+# Stage 1: Build Pulsar testclient with IoTPerformanceProducer
+# ================================================================================
+FROM maven:3.9-eclipse-temurin-17 AS builder
 
+WORKDIR /build
+
+# Download and extract Pulsar 4.1.1 source
+RUN apt-get update && apt-get install -y wget && \
+    wget https://archive.apache.org/dist/pulsar/pulsar-4.1.1/apache-pulsar-4.1.1-src.tar.gz && \
+    tar -xzf apache-pulsar-4.1.1-src.tar.gz && \
+    rm apache-pulsar-4.1.1-src.tar.gz && \
+    mv apache-pulsar-4.1.1-src pulsar-src
+
+# Copy custom IoTPerformanceProducer.java
+COPY IoTPerformanceProducer.java /build/pulsar-src/pulsar-testclient/src/main/java/org/apache/pulsar/testclient/
+
+# Build only the pulsar-testclient module (much faster than building entire Pulsar)
+WORKDIR /build/pulsar-src
+RUN mvn clean install -pl pulsar-testclient -am -DskipTests -Dspotbugs.skip=true -Drat.skip=true -Dlicense.skip=true -Dcheckstyle.skip=true && \
+    cd pulsar-testclient && \
+    mvn dependency:copy-dependencies -DoutputDirectory=target/dependency
+
+# ================================================================================
+# Stage 2: Runtime Image
+# ================================================================================
 FROM --platform=linux/amd64 eclipse-temurin:17-jre-alpine
 
 # Install bash for better container debugging
@@ -34,20 +35,17 @@ RUN apk add --no-cache bash
 # Create app directory
 WORKDIR /app
 
-# Copy the pulsar-sensor-perf binary script
+# Copy built artifacts from builder stage
+COPY --from=builder /build/pulsar-src/pulsar-testclient/target/pulsar-testclient.jar /app/target/pulsar-testclient.jar
+COPY --from=builder /build/pulsar-src/pulsar-testclient/target/dependency /app/target/dependency
+
+# Copy our custom pulsar-sensor-perf script (better than the one in Pulsar source)
 COPY pulsar-sensor-perf /app/pulsar-sensor-perf
 RUN chmod +x /app/pulsar-sensor-perf
 
 # Copy the entrypoint script for device ID distribution
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
-
-# Copy the compiled libs directory (contains classes and dependencies)
-# This must be copied AFTER pulsar-sensor-perf as it contains the compiled IoTPerformanceProducer
-COPY libs /app/target
-
-# Copy AVRO schema files for reference
-COPY src/main/resources/avro /app/avro-schemas
 
 # Create logs directory
 RUN mkdir -p /app/logs
@@ -56,7 +54,7 @@ RUN mkdir -p /app/logs
 ENV PULSAR_URL="pulsar://localhost:6650" \
     PULSAR_TOPIC="persistent://public/default/iot-sensor-data" \
     MESSAGE_RATE="250000" \
-    TOTAL_DEVICE_COUNT="100000" \
+    TOTAL_DEVICE_COUNT="17000" \
     NUM_REPLICAS="3" \
     NUM_MESSAGES="0" \
     STATS_INTERVAL="10" \
@@ -84,4 +82,3 @@ ENTRYPOINT ["/app/entrypoint.sh"]
 # Default command arguments (topic name)
 # Device ID ranges are automatically calculated by entrypoint.sh based on NUM_REPLICAS and pod instance
 CMD ["persistent://public/default/iot-sensor-data"]
-
