@@ -10,7 +10,7 @@ A comprehensive event streaming platform designed for high-throughput, real-time
 
 ### 🚀 Production Deployments
 
-#### `aws-infra-1milion-mps/` - High-Scale Production Setup
+#### `realtime-platform-1million-events/` - High-Scale Production Setup
 - **Purpose**: Enterprise-grade infrastructure for 1 million messages/second
 - **Components**: 
   - **Flink Load**: Real-time stream processing with AVRO deserialization
@@ -19,14 +19,14 @@ A comprehensive event streaming platform designed for high-throughput, real-time
   - **Producer Load**: High-throughput event data generation
 - **Infrastructure**: AWS EKS, dedicated node groups, NVMe storage
 - **Cost**: ~$1,500-2,000/month
-- **Documentation**: [Complete 1M MPS Documentation](aws-infra-1milion-mps/README.md)
+- **Documentation**: [Complete 1M MPS Documentation](realtime-platform-1million-events/README.md)
 
-#### `aws-infra-50k-mps/` - Cost-Optimized Production Setup
+#### `realtime-platform-50k-events/` - Cost-Optimized Production Setup
 - **Purpose**: Cost-effective infrastructure for 50,000 messages/second
 - **Components**: Same as 1M MPS but with smaller instance types
 - **Infrastructure**: AWS EKS with t3 series instances, EBS gp3 storage
 - **Cost**: ~$200-250/month
-- **Documentation**: [Complete 50K MPS Documentation](aws-infra-50k-mps/README.md)
+- **Documentation**: [Complete 50K MPS Documentation](realtime-platform-50k-events/README.md)
 
 ### 🛠️ Development Environment
 
@@ -94,8 +94,8 @@ cd local-setup
 ```
 
 ### For Production Deployment
-1. **1M MPS Setup**: Follow [1M MPS Deployment Guide](aws-infra-1milion-mps/DEPLOYMENT-RUNBOOK.md)
-2. **50K MPS Setup**: Follow [50K MPS Deployment Guide](aws-infra-50k-mps/DEPLOYMENT-RUNBOOK.md)
+1. **1M MPS Setup**: Follow [1M MPS Deployment Guide](realtime-platform-1million-events/DEPLOYMENT-RUNBOOK.md)
+2. **50K MPS Setup**: Follow [50K MPS Deployment Guide](realtime-platform-50k-events/DEPLOYMENT-RUNBOOK.md)
 
 ## 📊 Performance Characteristics
 
@@ -117,18 +117,18 @@ cd local-setup
 ## 📚 Documentation Index
 
 ### Production Setups
-- [1M MPS Complete Documentation](aws-infra-1milion-mps/README.md)
-- [50K MPS Complete Documentation](aws-infra-50k-mps/README.md)
+- [1M MPS Complete Documentation](realtime-platform-1million-events/README.md)
+- [50K MPS Complete Documentation](realtime-platform-50k-events/README.md)
 
 ### Component Details
-- [Flink Load Details (1M MPS)](aws-infra-1milion-mps/FLINK-LOAD-DETAILS.md)
-- [Pulsar Load Details (1M MPS)](aws-infra-1milion-mps/PULSAR-LOAD-DETAILS.md)
-- [ClickHouse Load Details (1M MPS)](aws-infra-1milion-mps/CLICKHOUSE-LOAD-DETAILS.md)
-- [Producer Load Details (1M MPS)](aws-infra-1milion-mps/PRODUCER-LOAD-DETAILS.md)
+- [Flink Load Details (1M MPS)](realtime-platform-1million-events/FLINK-LOAD-DETAILS.md)
+- [Pulsar Load Details (1M MPS)](realtime-platform-1million-events/PULSAR-LOAD-DETAILS.md)
+- [ClickHouse Load Details (1M MPS)](realtime-platform-1million-events/CLICKHOUSE-LOAD-DETAILS.md)
+- [Producer Load Details (1M MPS)](realtime-platform-1million-events/PRODUCER-LOAD-DETAILS.md)
 
 ### Deployment Guides
-- [1M MPS Deployment Runbook](aws-infra-1milion-mps/DEPLOYMENT-RUNBOOK.md)
-- [50K MPS Deployment Runbook](aws-infra-50k-mps/DEPLOYMENT-RUNBOOK.md)
+- [1M MPS Deployment Runbook](realtime-platform-1million-events/DEPLOYMENT-RUNBOOK.md)
+- [50K MPS Deployment Runbook](realtime-platform-50k-events/DEPLOYMENT-RUNBOOK.md)
 
 ### Development
 - [Local Setup Guide](local-setup/README.md)

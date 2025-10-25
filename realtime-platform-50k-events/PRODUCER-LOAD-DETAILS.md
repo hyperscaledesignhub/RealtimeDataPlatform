@@ -6,9 +6,38 @@ The `producer-load` folder contains a cost-optimized event data producer that ge
 ## Purpose
 - **Generate** realistic event stream data at moderate scale (500-1K msg/sec per pod)
 - **Publish** to Apache Pulsar with AVRO encoding
-- **Distribute** messages across 10,000 unique event sources
+- **Distribute** messages across 17,000 unique event sources
 - **Scale** horizontally across multiple Kubernetes pods (t3.medium instances)
 - **Cost-optimize** for moderate workloads (~$15-50/month for producer nodes)
+
+## Build Approach
+
+### Multi-Stage Docker Build
+This producer uses the **same multi-stage Docker build** as the 1M MPS setup:
+
+1. **Stage 1 (Builder):**
+   - Downloads Apache Pulsar 4.1.1 source code (~150MB)
+   - Copies `IoTPerformanceProducer.java` into the source tree
+   - Builds only the `pulsar-testclient` module with Maven
+   - Generates `pulsar-testclient.jar` and copies all dependencies (~365 JARs)
+   - **Build time:** 10-15 minutes (first build), 2-3 minutes (cached)
+
+2. **Stage 2 (Runtime):**
+   - Lightweight JRE Alpine image
+   - Copies only built artifacts from Stage 1
+   - Includes `pulsar-sensor-perf` wrapper script
+   - **Final image size:** ~721MB
+
+**Benefits:**
+- ✅ No JAR files in Git repository (clean codebase)
+- ✅ Reproducible builds from official Pulsar source
+- ✅ Standard Maven best practices
+- ✅ Easy Pulsar version updates
+
+**Required Files in Repository:**
+- `IoTPerformanceProducer.java` - Custom producer implementation
+- `pulsar-sensor-perf` - Wrapper script
+- `Dockerfile.perf` - Multi-stage build definition
 
 ## Key Differences from 1M Setup
 
@@ -18,7 +47,7 @@ The `producer-load` folder contains a cost-optimized event data producer that ge
 | vCPU per pod | 2 | 16 |
 | RAM per pod | 4 GB | 32 GB |
 | Rate per pod | 500-1K msg/sec | 1K-5K msg/sec |
-| Event sources | 10,000 unique IDs | 100,000 unique IDs |
+| Event sources | 17,000 unique IDs | 17,000 unique IDs |
 | Pod count | 1-3 (default: 1) | 3-16 (default: 3) |
 | Total capacity | Up to 3K msg/sec | Up to 50K msg/sec |
 | Monthly cost | ~$15-50 | ~$367 |
@@ -26,7 +55,7 @@ The `producer-load` folder contains a cost-optimized event data producer that ge
 ## Data Model
 
 ### Event Sources Pool
-- **10,000** unique event source IDs (source-0000000 to source-0009999)
+- **17,000** unique event source IDs (source-0000000 to source-0016999)
 - **1,000** customers (cust-000000 to cust-000999)
 - **100** sites (site-00000 to site-00099)
 - **20** event types
