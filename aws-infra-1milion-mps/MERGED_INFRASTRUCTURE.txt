@@ -1,0 +1,259 @@
+================================================================================
+MERGED LOW-COST INFRASTRUCTURE - ALL SERVICES IN ONE CLUSTER
+================================================================================
+
+This Terraform configuration has been MERGED to include all three services:
+1. Apache Flink (stream processing)
+2. Apache Pulsar (message broker)
+3. ClickHouse (analytics database)
+
+================================================================================
+CLUSTER OVERVIEW
+================================================================================
+
+Cluster Name: benchmark-low-infra
+VPC CIDR: 10.1.0.0/16
+Availability Zone: Single AZ (us-west-2a) for cost savings
+Region: us-west-2
+
+================================================================================
+NODE GROUPS (7 TOTAL)
+================================================================================
+
+FLINK NODE GROUPS (2):
+----------------------
+1. flink-taskmanager
+   - Instance: t3.medium (2 vCPU, 4 GB RAM)
+   - Desired: 2 nodes
+   - Label: role=flink-taskmanager, workload=flink, service=flink
+   
+2. flink-jobmanager
+   - Instance: t3.small (2 vCPU, 2 GB RAM)
+   - Desired: 1 node
+   - Label: role=flink-jobmanager, workload=flink, service=flink
+
+PULSAR NODE GROUPS (3):
+-----------------------
+3. pulsar-zookeeper
+   - Instance: t3.small (2 vCPU, 2 GB RAM)
+   - Desired: 1 node (production uses 3)
+   - Label: component=zookeeper, pulsar-role=zookeeper, service=pulsar
+   
+4. pulsar-broker
+   - Instance: t3.medium (2 vCPU, 4 GB RAM)
+   - Desired: 2 nodes
+   - Label: component=broker, pulsar-role=broker, service=pulsar
+   
+5. pulsar-bookkeeper
+   - Instance: t3.medium (2 vCPU, 4 GB RAM)
+   - Desired: 2 nodes (larger disk for message storage)
+   - Label: component=bookie, pulsar-role=bookie, service=pulsar
+
+CLICKHOUSE NODE GROUPS (1):
+---------------------------
+6. clickhouse-nodes
+   - Instance: t3.xlarge (4 vCPU, 16 GB RAM)
+   - Desired: 1 node
+   - Label: workload=clickhouse, node_group=clickhouse_nodes, service=clickhouse
+   - Taint: clickhouse=true:NoSchedule
+
+GENERAL NODE GROUP (1):
+-----------------------
+7. general-nodes
+   - Instance: t3.small (2 vCPU, 2 GB RAM)
+   - Desired: 2 nodes
+   - Label: workload=general, service=shared
+   - For: Operators, monitoring, utilities
+
+TOTAL NODES: ~10-11 nodes
+
+================================================================================
+RESOURCE SUMMARY
+================================================================================
+
+Total vCPUs: ~28-32 vCPUs
+Total RAM: ~56-64 GB
+Total Disk: ~500-600 GB (GP3)
+All in: Single AZ (us-west-2a)
+
+================================================================================
+COST ESTIMATE
+================================================================================
+
+ON-DEMAND:
+- EKS Control Plane: $73/month
+- t3.small (4 nodes): ~$60/month ($15 each)
+- t3.medium (6 nodes): ~$150/month ($25 each)
+- t3.xlarge (1 node): ~$150/month
+- NAT Gateway: $32/month
+- EBS Storage (500GB): ~$40/month
+- Data Transfer: ~$20/month
+TOTAL: ~$525/month
+
+WITH SPOT INSTANCES (70% savings):
+- EKS Control Plane: $73/month
+- t3.small (4 nodes): ~$18/month
+- t3.medium (6 nodes): ~$45/month
+- t3.xlarge (1 node): ~$45/month
+- NAT Gateway: $32/month
+- EBS Storage (500GB): ~$40/month
+- Data Transfer: ~$20/month
+TOTAL: ~$273/month
+
+COMPARED TO SEPARATE CLUSTERS:
+Separate clusters would cost: ~$800-1000/month
+Shared cluster saves: ~$500-700/month (60-70% savings)
+
+================================================================================
+DEPLOYMENT
+================================================================================
+
+STEP 1: Deploy Infrastructure (ONE command creates everything!)
+----------------------------------------------------------------
+cd Flink-Benchmark/low_infra_flink
+
+# Copy and edit configuration
+cp terraform.tfvars.example terraform.tfvars
+vim terraform.tfvars
+
+# Initialize Terraform
+terraform init
+
+# Review what will be created
+terraform plan
+
+# Create all infrastructure
+terraform apply
+
+This creates:
+✅ EKS cluster "benchmark-low-infra"
+✅ VPC 10.1.0.0/16 with single AZ
+✅ 7 node groups for all services
+✅ IAM roles and policies
+✅ Storage classes
+✅ Flink Kubernetes Operator
+
+Wait: 15-20 minutes for cluster creation
+
+STEP 2: Configure kubectl
+--------------------------
+aws eks update-kubeconfig --region us-west-2 --name benchmark-low-infra
+kubectl get nodes --show-labels
+
+You should see 10-11 nodes with different labels!
+
+STEP 3: Deploy Applications
+----------------------------
+
+# Install Flink Operator (already done by Terraform)
+cd k8s
+
+# Deploy Flink
+kubectl create namespace flink-benchmark
+kubectl apply -f flink-serviceaccount.yaml
+kubectl apply -f flink-deployment.yaml
+
+# Deploy Pulsar
+kubectl create namespace pulsar
+kubectl apply -f ../../low_infra_pulsar/k8s/pulsar.yaml
+
+# Deploy ClickHouse
+cd ../../../clickhouse-benchmark/clickhouse_updated_k8script/
+kubectl apply -f deploy-zookeeper-all.yaml
+kubectl apply -f deploy-clickhouse-all.yaml
+
+STEP 4: Verify Everything
+--------------------------
+kubectl get nodes
+kubectl get pods -A
+kubectl get namespaces
+
+================================================================================
+NAMESPACE ORGANIZATION
+================================================================================
+
+benchmark-low-infra (EKS Cluster)
+  ├── flink-operator-system     # Flink Operator
+  ├── flink-benchmark           # Flink jobs and applications
+  ├── pulsar                    # Pulsar brokers, bookies
+  ├── clickhouse                # ClickHouse database cluster
+  ├── zoons                     # ZooKeeper for ClickHouse
+  └── kube-system               # Kubernetes system components
+
+================================================================================
+ADVANTAGES OF MERGED CONFIGURATION
+================================================================================
+
+✅ Single terraform apply creates everything
+✅ No VPC/cluster conflicts
+✅ All node groups created together
+✅ One state file to manage
+✅ Consistent configuration
+✅ Easy to scale all services
+✅ Lower cost (shared infrastructure)
+✅ Simplified deployment
+
+================================================================================
+NODE PLACEMENT STRATEGY
+================================================================================
+
+Each workload runs on dedicated nodes using:
+- Node selectors (labels)
+- Taints (for ClickHouse)
+- Resource requests/limits
+
+Example:
+- Flink TaskManager pods → nodes with label "role=flink-taskmanager"
+- Pulsar Broker pods → nodes with label "pulsar-role=broker"
+- ClickHouse pods → nodes with label "node_group=clickhouse_nodes"
+
+This ensures workload isolation while sharing the cluster!
+
+================================================================================
+SCALING
+================================================================================
+
+Scale individual node groups:
+
+# Scale Flink TaskManagers
+aws autoscaling set-desired-capacity \
+  --auto-scaling-group-name <asg-name> \
+  --desired-capacity 4
+
+Or update terraform.tfvars and re-apply:
+terraform apply
+
+================================================================================
+CLEANUP
+================================================================================
+
+To destroy everything:
+terraform destroy
+
+This removes:
+- All node groups
+- EKS cluster
+- VPC and networking
+- IAM roles
+- Storage classes
+
+All services go down together!
+
+================================================================================
+IMPORTANT NOTES
+================================================================================
+
+1. ONLY use low_infra_flink/main.tf now
+2. DO NOT run low_infra_pulsar or low_infra_clickhouse terraform
+3. Those directories are now for reference only
+4. All infrastructure in ONE place for simplicity
+
+5. For applications (YAML), still use separate directories:
+   - low_infra_flink/k8s/ (Flink deployments)
+   - low_infra_pulsar/k8s/ (Pulsar deployments)  
+   - clickhouse-benchmark/k8s/ (ClickHouse deployments)
+
+================================================================================
+END OF MERGED INFRASTRUCTURE GUIDE
+================================================================================
+

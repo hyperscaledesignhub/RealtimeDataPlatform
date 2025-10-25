@@ -1,0 +1,169 @@
+================================================================================
+OPTIONAL DEPLOYMENT GUIDE - CHOOSE YOUR SERVICES
+================================================================================
+
+This guide shows how to deploy only the services you need using the merged
+Terraform configuration with optional service installation.
+
+================================================================================
+DEPLOYMENT OPTIONS
+================================================================================
+
+1. ALL SERVICES (Default)
+   - Flink + Pulsar + ClickHouse
+   - Cost: ~$500-600/month (on-demand), ~$250-300/month (spot)
+   - Use: terraform.tfvars.all
+
+2. FLINK ONLY
+   - Stream processing only
+   - Cost: ~$150-200/month (on-demand), ~$75-100/month (spot)
+   - Use: terraform.tfvars.flink-only
+
+3. PULSAR ONLY
+   - Message broker only
+   - Cost: ~$200-250/month (on-demand), ~$100-125/month (spot)
+   - Use: terraform.tfvars.pulsar-only
+
+4. CLICKHOUSE ONLY
+   - Analytics database only
+   - Cost: ~$200-250/month (on-demand), ~$100-125/month (spot)
+   - Use: terraform.tfvars.clickhouse-only
+
+================================================================================
+DEPLOYMENT STEPS
+================================================================================
+
+STEP 1: Choose Your Configuration
+----------------------------------
+# For ALL services
+cp terraform.tfvars.all terraform.tfvars
+
+# For FLINK only
+cp terraform.tfvars.flink-only terraform.tfvars
+
+# For PULSAR only
+cp terraform.tfvars.pulsar-only terraform.tfvars
+
+# For CLICKHOUSE only
+cp terraform.tfvars.clickhouse-only terraform.tfvars
+
+STEP 2: Customize Configuration (Optional)
+-------------------------------------------
+vim terraform.tfvars
+
+# Adjust node counts, instance types, etc.
+
+STEP 3: Deploy Infrastructure
+------------------------------
+cd Flink-Benchmark/low_infra_flink
+
+# Initialize Terraform
+terraform init
+
+# Review what will be created
+terraform plan
+
+# Create infrastructure
+terraform apply
+
+Wait: 15-20 minutes for cluster creation
+
+STEP 4: Verify Infrastructure
+------------------------------
+aws eks update-kubeconfig --region us-west-2 --name <cluster-name>
+kubectl get nodes --show-labels
+
+You should see nodes with labels matching your enabled services!
+
+STEP 5: Deploy Applications
+----------------------------
+
+# For FLINK (if enabled):
+kubectl create namespace flink-benchmark
+kubectl apply -f k8s/flink-serviceaccount.yaml
+kubectl apply -f k8s/flink-deployment.yaml
+
+# For PULSAR (if enabled):
+helm install pulsar helm/pulsar -f ../../low_infra_pulsar/terraform/pulsar-values.yaml
+
+# For CLICKHOUSE (if enabled):
+kubectl apply -f clickhouse-operator/deploy/operator/clickhouse-operator-install-bundle.yaml
+kubectl apply -f ../../clickhouse-benchmark/clickhouse_updated_k8script/deploy-zookeeper-all.yaml
+kubectl apply -f ../../clickhouse-benchmark/clickhouse_updated_k8script/deploy-clickhouse-all.yaml
+
+================================================================================
+CONFIGURATION VARIABLES
+================================================================================
+
+Key variables to control deployment:
+
+enable_flink = true/false          # Enable Flink node groups
+enable_pulsar = true/false         # Enable Pulsar node groups  
+enable_clickhouse = true/false     # Enable ClickHouse node groups
+enable_general_nodes = true/false  # Enable general nodes (required for operators)
+
+# Node scaling
+flink_taskmanager_desired_size = 2
+flink_jobmanager_desired_size = 1
+pulsar_zookeeper_desired_size = 3
+pulsar_broker_desired_size = 3
+pulsar_bookkeeper_desired_size = 3
+clickhouse_desired_size = 3
+
+# Cost optimization
+use_spot_instances = true/false
+
+================================================================================
+COST COMPARISON
+================================================================================
+
+Service Combination          | On-Demand Cost | Spot Cost | Nodes
+----------------------------|----------------|-----------|-------
+ALL (Flink+Pulsar+ClickHouse)| $500-600/month | $250-300/month | ~11 nodes
+FLINK ONLY                  | $150-200/month | $75-100/month  | ~3 nodes
+PULSAR ONLY                 | $200-250/month | $100-125/month | ~6 nodes
+CLICKHOUSE ONLY             | $200-250/month | $100-125/month | ~2 nodes
+
+================================================================================
+SCALING AFTER DEPLOYMENT
+================================================================================
+
+To scale services after deployment:
+
+# Method 1: Update terraform.tfvars and re-apply
+vim terraform.tfvars
+terraform apply
+
+# Method 2: Direct AWS CLI scaling
+aws autoscaling set-desired-capacity \
+  --auto-scaling-group-name <asg-name> \
+  --desired-capacity <new-size>
+
+================================================================================
+CLEANUP
+================================================================================
+
+To destroy infrastructure:
+terraform destroy
+
+This removes only the enabled services and their resources.
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+1. Check node labels match expectations:
+   kubectl get nodes --show-labels
+
+2. Verify pods are scheduled on correct nodes:
+   kubectl get pods -o wide -A
+
+3. Check if node groups exist:
+   aws eks describe-nodegroup --cluster-name <cluster> --nodegroup-name <ng-name>
+
+4. Review Terraform plan before applying:
+   terraform plan
+
+================================================================================
+END OF OPTIONAL DEPLOYMENT GUIDE
+================================================================================

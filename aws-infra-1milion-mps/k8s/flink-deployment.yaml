@@ -1,0 +1,169 @@
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: flink-benchmark-cluster
+  namespace: flink-benchmark
+spec:
+  image: flink:1.18.0
+  flinkVersion: v1_18
+  imagePullPolicy: IfNotPresent
+  
+  serviceAccount: flink
+  
+  flinkConfiguration:
+    # High Availability
+    high-availability.type: kubernetes
+    high-availability.storageDir: 'file:///opt/flink/ha'
+    
+    # Checkpointing
+    execution.checkpointing.interval: '60s'
+    execution.checkpointing.timeout: '5min'
+    state.backend: rocksdb
+    state.backend.incremental: 'true'
+    state.checkpoints.dir: 'file:///opt/flink/checkpoints'
+    state.savepoints.dir: 'file:///opt/flink/savepoints'
+    
+    # RocksDB Configuration
+    state.backend.rocksdb.checkpoint.transfer.thread.num: '8'
+    state.backend.rocksdb.block.cache-size: 512m
+    state.backend.rocksdb.writebuffer.size: 128m
+    state.backend.rocksdb.writebuffer.count: '4'
+    state.backend.rocksdb.thread.num: '8'
+    
+    # Restart Strategy
+    restart-strategy: exponential-delay
+    restart-strategy.exponential-delay.initial-backoff: 10s
+    restart-strategy.exponential-delay.max-backoff: 2min
+    restart-strategy.exponential-delay.backoff-multiplier: '2.0'
+    
+    # Metrics
+    metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+    metrics.reporter.prom.port: '9249'
+    
+    # Network Configuration
+    taskmanager.network.memory.fraction: '0.2'
+    taskmanager.network.memory.buffers-per-channel: '16'
+    taskmanager.network.memory.floating-buffers-per-gate: '32'
+    
+    # Parallelism
+    parallelism.default: '32'
+    taskmanager.numberOfTaskSlots: '8'
+    
+    # Logging
+    rootLogger.level: INFO
+  
+  jobManager:
+    replicas: 2  # HA setup
+    resource:
+      memory: "8192m"
+      cpu: 2
+    podTemplate:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: job-manager-pod-template
+      spec:
+        nodeSelector:
+          role: flink-jobmanager
+        containers:
+          - name: flink-main-container
+            env:
+              - name: FLINK_PROPERTIES
+                value: |
+                  jobmanager.memory.process.size: 8192m
+                  jobmanager.memory.jvm-overhead.max: 2048m
+            volumeMounts:
+              - name: flink-storage
+                mountPath: /opt/flink/ha
+              - name: flink-checkpoints
+                mountPath: /opt/flink/checkpoints
+              - name: flink-savepoints
+                mountPath: /opt/flink/savepoints
+        volumes:
+          - name: flink-storage
+            emptyDir: {}
+          - name: flink-checkpoints
+            emptyDir: {}
+          - name: flink-savepoints
+            emptyDir: {}
+  
+  taskManager:
+    replicas: 4
+    resource:
+      memory: "57344m"  # 56 GB
+      cpu: 15
+    podTemplate:
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: task-manager-pod-template
+      spec:
+        nodeSelector:
+          role: flink-taskmanager
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchExpressions:
+                      - key: component
+                        operator: In
+                        values:
+                          - taskmanager
+                  topologyKey: kubernetes.io/hostname
+        containers:
+          - name: flink-main-container
+            env:
+              - name: FLINK_PROPERTIES
+                value: |
+                  taskmanager.memory.process.size: 57344m
+                  taskmanager.memory.managed.size: 20480m
+                  taskmanager.memory.network.min: 8192m
+                  taskmanager.memory.network.max: 12288m
+                  taskmanager.memory.jvm-overhead.max: 4096m
+                  taskmanager.memory.task.heap.size: 16384m
+                  taskmanager.memory.task.off-heap.size: 4096m
+            volumeMounts:
+              - name: flink-storage
+                mountPath: /opt/flink/ha
+              - name: flink-checkpoints
+                mountPath: /opt/flink/checkpoints
+              - name: flink-tmp
+                mountPath: /tmp
+        volumes:
+          - name: flink-storage
+            emptyDir: {}
+          - name: flink-checkpoints
+            emptyDir: {}
+          - name: flink-tmp
+            emptyDir: {}
+  
+  # Job Configuration
+  job:
+    jarURI: local:///opt/flink/usrlib/flink-consumer-1.0.0.jar
+    parallelism: 32
+    upgradeMode: savepoint
+    state: running
+    savepointTriggerNonce: 0
+    
+    # Job Environment Variables
+    env:
+      - name: PULSAR_URL
+        value: "pulsar://pulsar.flink-benchmark.svc.cluster.local:6650"
+      - name: PULSAR_TOPIC
+        value: "persistent://public/default/iot-sensor-data"
+      - name: CLICKHOUSE_URL
+        value: "jdbc:clickhouse://clickhouse.flink-benchmark.svc.cluster.local:8123/iot"
+    
+  mode: native
+  
+  # Pod Disruption Budget
+  podTemplate:
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      labels:
+        app: flink-benchmark
+        environment: production
+

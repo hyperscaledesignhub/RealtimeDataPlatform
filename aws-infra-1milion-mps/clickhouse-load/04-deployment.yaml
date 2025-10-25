@@ -1,0 +1,228 @@
+---
+# ConfigMap for scripts
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-low-rate-scripts
+  namespace: default
+data:
+  create-schema.sql: |
+    -- ClickHouse Schema for Low-Rate Benchmark
+    CREATE DATABASE IF NOT EXISTS benchmark;
+    
+    CREATE TABLE IF NOT EXISTS benchmark.cpu_local
+    (
+        hostname String,
+        region String,
+        datacenter String,
+        time DateTime64(3),
+        cpu_usage Float32,
+        memory_usage Float32,
+        disk_usage Float32,
+        load_avg_1m Float32,
+        load_avg_5m Float32,
+        load_avg_15m Float32,
+        network_in UInt64,
+        network_out UInt64,
+        disk_read UInt64,
+        disk_write UInt64
+    )
+    ENGINE = MergeTree()
+    PARTITION BY toYYYYMM(time)
+    ORDER BY (hostname, time)
+    PRIMARY KEY (hostname)
+    SETTINGS index_granularity = 8192;
+    
+    CREATE TABLE IF NOT EXISTS benchmark.sensors_local
+    (
+        -- Device identifiers (optimized for integer-based data)
+        device_id String,           -- converted from sensor_id
+        device_type String,         -- converted from sensor_type  
+        customer_id String,         -- default mapping
+        site_id String,             -- converted from location
+        
+        -- Location data (simplified - no metadata in optimized schema)
+        latitude Float64 DEFAULT 0.0,
+        longitude Float64 DEFAULT 0.0,
+        altitude Float32 DEFAULT 0.0,
+        
+        -- Timestamp
+        time DateTime64(3),
+        
+        -- Core sensor readings (from optimized Avro schema)
+        temperature Float32,
+        humidity Float32,
+        pressure Float32,
+        battery_level Float32,
+        
+        -- Status (integer from optimized schema)
+        status UInt8,  -- 1=online, 2=offline, 3=maintenance, 4=error
+        
+        -- Additional metrics (defaults for compatibility)
+        co2_level Float32 DEFAULT 400.0,
+        noise_level Float32 DEFAULT 50.0,
+        light_level Float32 DEFAULT 500.0,
+        motion_detected UInt8 DEFAULT 0,
+        signal_strength Float32 DEFAULT -50.0,
+        memory_usage Float32 DEFAULT 50.0,
+        cpu_usage Float32 DEFAULT 30.0,
+        error_count UInt32 DEFAULT 0,
+        packets_sent UInt64 DEFAULT 0,
+        packets_received UInt64 DEFAULT 0,
+        bytes_sent UInt64 DEFAULT 0,
+        bytes_received UInt64 DEFAULT 0
+    )
+    ENGINE = MergeTree()
+    PARTITION BY toYYYYMM(time)
+    ORDER BY (device_id, time)
+    PRIMARY KEY (device_id)
+    SETTINGS index_granularity = 8192;
+    
+    ALTER TABLE benchmark.cpu_local ADD INDEX idx_hostname hostname TYPE bloom_filter(0.01) GRANULARITY 4;
+    ALTER TABLE benchmark.sensors_local ADD INDEX idx_device_id device_id TYPE bloom_filter(0.01) GRANULARITY 4;
+    ALTER TABLE benchmark.sensors_local ADD INDEX idx_temperature temperature TYPE minmax GRANULARITY 4;
+    ALTER TABLE benchmark.sensors_local ADD INDEX idx_status status TYPE bloom_filter(0.01) GRANULARITY 4;
+
+---
+# Job to create schema
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: clickhouse-create-schema
+  namespace: default
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        workload: "clickhouse-query"
+      tolerations:
+      - key: "clickhouse-query"
+        value: "true"
+        effect: "NoSchedule"
+      containers:
+      - name: create-schema
+        image: curlimages/curl:latest
+        command: ["/bin/sh"]
+        args:
+          - -c
+          - |
+            echo "Creating ClickHouse schema..."
+            curl -X POST "http://chi-iot-cluster-repl-iot-cluster-0-0-0.clickhouse.svc.cluster.local:8123" \
+              --data-binary @/scripts/create-schema.sql
+            echo "Schema created successfully!"
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+      volumes:
+      - name: scripts
+        configMap:
+          name: clickhouse-low-rate-scripts
+
+---
+# Deployment for low-rate data writer
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clickhouse-low-rate-writer
+  namespace: default
+  labels:
+    app: clickhouse-low-rate-writer
+spec:
+  replicas: 1  # Single writer for low rate
+  selector:
+    matchLabels:
+      app: clickhouse-low-rate-writer
+  template:
+    metadata:
+      labels:
+        app: clickhouse-low-rate-writer
+    spec:
+      nodeSelector:
+        workload: "clickhouse-query"
+      tolerations:
+      - key: "clickhouse-query"
+        value: "true"
+        effect: "NoSchedule"
+      containers:
+      - name: writer
+        image: python:3.9-slim
+        command: ["python3", "/app/02-low-rate-writer.py"]
+        env:
+        - name: CLICKHOUSE_HOST
+          value: "chi-iot-cluster-repl-iot-cluster-0-0-0.clickhouse.svc.cluster.local"
+        - name: CLICKHOUSE_PORT
+          value: "8123"
+        - name: CLICKHOUSE_DB
+          value: "benchmark"
+        - name: CLICKHOUSE_USER
+          value: "default"
+        - name: CLICKHOUSE_PASSWORD
+          value: ""
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        volumeMounts:
+        - name: app
+          mountPath: /app
+      volumes:
+      - name: app
+        configMap:
+          name: clickhouse-low-rate-scripts-py
+          defaultMode: 0755
+
+---
+# Job for benchmark queries
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: clickhouse-low-rate-benchmark
+  namespace: default
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        workload: "clickhouse-query"
+      tolerations:
+      - key: "clickhouse-query"
+        value: "true"
+        effect: "NoSchedule"
+      containers:
+      - name: benchmark
+        image: python:3.9-slim
+        command: ["python3", "/app/03-low-rate-benchmark.py"]
+        args:
+          - "--qps=10"
+          - "--workers=2"
+          - "--duration=300"
+        env:
+        - name: CLICKHOUSE_HOST
+          value: "chi-iot-cluster-repl-iot-cluster-0-0-0.clickhouse.svc.cluster.local"
+        - name: CLICKHOUSE_PORT
+          value: "8123"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        volumeMounts:
+        - name: app
+          mountPath: /app
+      volumes:
+      - name: app
+        configMap:
+          name: clickhouse-low-rate-scripts-py
+          defaultMode: 0755
+

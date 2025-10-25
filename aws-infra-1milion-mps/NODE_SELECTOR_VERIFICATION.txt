@@ -1,0 +1,94 @@
+================================================================================
+NODE SELECTOR VERIFICATION - MERGED TERRAFORM CONFIGURATION
+================================================================================
+
+This document verifies that the node selectors in our SINGLE merged Terraform
+configuration match exactly with what the deployment YAML files expect.
+
+================================================================================
+FINAL VERIFICATION TABLE
+================================================================================
+
+| Service | Merged Terraform Labels | Expected Node Selectors | Status |
+|---------|------------------------|-------------------------|--------|
+| Flink JobManager | role: flink-jobmanager | role: flink-jobmanager | ✅ MATCH |
+| Flink TaskManager | role: flink-taskmanager | role: flink-taskmanager | ✅ MATCH |
+| Pulsar ZooKeeper | component: zookeeper<br>pulsar-role: zookeeper<br>node-type: zookeeper | component: zookeeper<br>pulsar-role: zookeeper<br>node-type: zookeeper | ✅ MATCH |
+| Pulsar Broker | component: broker<br>pulsar-role: broker<br>node-type: broker | component: broker<br>pulsar-role: broker<br>node-type: broker | ✅ MATCH |
+| Pulsar BookKeeper | component: bookie<br>pulsar-role: bookie<br>node-type: bookkeeper | component: bookie<br>pulsar-role: bookie<br>node-type: bookkeeper | ✅ MATCH |
+| ClickHouse | node_group: clickhouse_nodes | node_group: clickhouse_nodes | ✅ MATCH |
+
+================================================================================
+DEPLOYMENT FILES VERIFIED
+================================================================================
+
+1. FLINK DEPLOYMENT:
+   File: low_infra_flink/k8s/flink-deployment.yaml
+   ✅ JobManager: nodeSelector: role: flink-jobmanager
+   ✅ TaskManager: nodeSelector: role: flink-taskmanager
+
+2. PULSAR DEPLOYMENT:
+   File: low_infra_pulsar/terraform/pulsar-values.yaml (Helm values)
+   ✅ ZooKeeper: component: zookeeper, pulsar-role: zookeeper, node-type: zookeeper
+   ✅ Broker: component: broker, pulsar-role: broker, node-type: broker
+   ✅ BookKeeper: component: bookie, pulsar-role: bookie, node-type: bookkeeper
+
+3. CLICKHOUSE DEPLOYMENT:
+   File: clickhouse-benchmark/clickhouse_updated_k8script/deploy-clickhouse-all.yaml
+   ✅ ClickHouse: node_group: clickhouse_nodes
+
+================================================================================
+TERRAFORM CONFIGURATION LOCATION
+================================================================================
+
+SINGLE FILE: Flink-Benchmark/low_infra_flink/main.tf
+
+This file contains ALL node group definitions:
+- Flink node groups (2)
+- Pulsar node groups (3) 
+- ClickHouse node groups (1)
+- General node groups (1)
+
+Total: 7 node groups in ONE Terraform configuration
+
+================================================================================
+DEPLOYMENT PROCESS
+================================================================================
+
+1. Deploy Infrastructure:
+   cd Flink-Benchmark/low_infra_flink
+   terraform apply
+   
+   This creates:
+   - EKS cluster: benchmark-low-infra
+   - 7 node groups with correct labels
+   - VPC and networking
+   - IAM roles
+
+2. Deploy Applications:
+   # Flink
+   kubectl apply -f k8s/flink-deployment.yaml
+   
+   # Pulsar (using Helm)
+   helm install pulsar helm/pulsar -f terraform/pulsar-values.yaml
+   
+   # ClickHouse
+   kubectl apply -f ../../../clickhouse-benchmark/clickhouse_updated_k8script/deploy-clickhouse-all.yaml
+
+3. Verify Pod Placement:
+   kubectl get pods -o wide -A
+   kubectl describe nodes --show-labels
+
+================================================================================
+CONCLUSION
+================================================================================
+
+✅ ALL NODE SELECTORS ARE NOW PROPERLY ALIGNED!
+
+The merged Terraform configuration in low_infra_flink/main.tf creates
+node groups with labels that exactly match what the deployment YAML
+files expect for node selectors.
+
+No conflicts, no mismatches - everything is ready for deployment!
+
+================================================================================

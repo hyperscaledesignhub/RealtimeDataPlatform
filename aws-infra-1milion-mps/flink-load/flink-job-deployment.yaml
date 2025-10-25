@@ -1,0 +1,138 @@
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: iot-flink-job
+  namespace: flink-benchmark
+spec:
+  # Flink image with your consumer JAR
+  image: 343218179954.dkr.ecr.us-west-2.amazonaws.com/bench-low-infra-flink-job:latest
+  imagePullPolicy: Always  # Force pull latest image
+  flinkVersion: v1_18
+  flinkConfiguration:
+    taskmanager.numberOfTaskSlots: "16" # 8 CPUs x 2 slots per CPU
+    restart-strategy: fixed-delay
+    restart-strategy.fixed-delay.attempts: "3"
+    restart-strategy.fixed-delay.delay: "10s"
+    
+    # Checkpoint Configuration
+    execution.checkpointing.interval: "60s"  # Checkpoint every 60 seconds
+    execution.checkpointing.mode: EXACTLY_ONCE
+    execution.checkpointing.timeout: "10min"
+    execution.checkpointing.max-concurrent-checkpoints: "1"
+    execution.checkpointing.min-pause: "30s"  # Min pause between checkpoints
+    
+    # Checkpoint Storage (S3 for production, local for dev/test)
+    state.backend: rocksdb
+    state.backend.incremental: "true"
+    # For S3 (production):
+    state.checkpoints.dir: s3://s3-platform-flink/flink-checkpoints/low-infra/
+    state.savepoints.dir: s3://s3-platform-flink/flink-savepoints/low-infra/
+    # For local filesystem (dev/test):
+    #state.checkpoints.dir: file:///opt/flink/checkpoints
+    #state.savepoints.dir: file:///opt/flink/savepoints
+    
+    # S3 Configuration - Force IRSA credential provider
+    fs.s3a.aws.credentials.provider: com.amazonaws.auth.WebIdentityTokenCredentialsProvider
+    s3.path.style.access: "false"
+    
+    # Checkpoint Retention
+    execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+    execution.checkpointing.num-retained: "3"  # Keep last 3 checkpoints
+    
+    # State Backend Tuning (RocksDB)
+    state.backend.rocksdb.predefined-options: FLASH_SSD_OPTIMIZED
+    state.backend.rocksdb.thread.num: "4"
+  
+  serviceAccount: flink
+  
+  # JobManager Configuration
+  jobManager:
+    replicas: 1
+    resource:
+      memory: "1024m"
+      cpu: 2.0
+    
+    # Place on Flink JobManager nodes
+    podTemplate:
+      spec:
+        nodeSelector:
+          workload: flink
+          role: flink-jobmanager
+        tolerations:
+        - key: "flink"
+          value: "jobmanager"
+          effect: "NoSchedule"
+        containers:
+        - name: flink-main-container
+          env:
+          - name: PULSAR_URL
+            value: "pulsar://pulsar-proxy.pulsar.svc.cluster.local:6650"
+          - name: PULSAR_ADMIN_URL
+            value: "http://pulsar-proxy.pulsar.svc.cluster.local:8080"
+          - name: PULSAR_TOPIC
+            value: "persistent://public/default/iot-sensor-data"
+          - name: CLICKHOUSE_URL
+            value: "jdbc:clickhouse://clickhouse-iot-cluster-repl.clickhouse.svc.cluster.local:8123/benchmark"
+          volumeMounts:
+          - name: flink-checkpoints
+            mountPath: /opt/flink/checkpoints
+          - name: flink-savepoints
+            mountPath: /opt/flink/savepoints
+        volumes:
+        - name: flink-checkpoints
+          emptyDir:
+            sizeLimit: 5Gi
+        - name: flink-savepoints
+          emptyDir:
+            sizeLimit: 5Gi
+  
+  # TaskManager Configuration
+  taskManager:
+    replicas: 4  # 4 TaskManagers × 16 slots = 64 total slots (matches parallelism)
+    resource:
+      memory: "16384m" # Increased from 8192m
+      cpu: 15.5 # Reduced to fit allocatable CPU
+    
+    # Place on Flink TaskManager nodes
+    podTemplate:
+      spec:
+        nodeSelector:
+          workload: flink
+          role: flink-taskmanager
+        tolerations:
+        - key: "flink"
+          value: "taskmanager"
+          effect: "NoSchedule"
+        containers:
+        - name: flink-main-container
+          env:
+          - name: PULSAR_URL
+            value: "pulsar://pulsar-proxy.pulsar.svc.cluster.local:6650"
+          - name: PULSAR_ADMIN_URL
+            value: "http://pulsar-proxy.pulsar.svc.cluster.local:8080"
+          - name: PULSAR_TOPIC
+            value: "persistent://public/default/iot-sensor-data"
+          - name: CLICKHOUSE_URL
+            value: "jdbc:clickhouse://clickhouse-iot-cluster-repl.clickhouse.svc.cluster.local:8123/benchmark"
+          volumeMounts:
+          - name: flink-checkpoints
+            mountPath: /opt/flink/checkpoints
+          - name: flink-savepoints
+            mountPath: /opt/flink/savepoints
+        volumes:
+        - name: flink-checkpoints
+          emptyDir:
+            sizeLimit: 10Gi  # TaskManagers need more space for state
+        - name: flink-savepoints
+          emptyDir:
+            sizeLimit: 5Gi
+  
+  # Job Configuration
+  job:
+    jarURI: local:///opt/flink/usrlib/flink-job.jar
+    entryClass: com.iot.pipeline.flink.JDBCFlinkConsumer
+    parallelism: 64 # 4 TaskManagers * 16 slots each = 64 total parallelism
+    upgradeMode: savepoint  # Enable stateful upgrades with checkpoints
+    state: running
+    savepointTriggerNonce: 0  # Increment to manually trigger savepoint
+

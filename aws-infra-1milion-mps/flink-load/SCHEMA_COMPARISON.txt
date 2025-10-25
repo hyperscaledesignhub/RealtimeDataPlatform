@@ -1,0 +1,157 @@
+================================================================================
+FLINK CONSUMER vs CLICKHOUSE SCHEMA COMPARISON
+================================================================================
+
+ISSUE: The existing Flink consumer schema does NOT match the ClickHouse schema!
+
+================================================================================
+CURRENT FLINK CONSUMER SCHEMA (aws-deploy/flink-consumer)
+================================================================================
+
+TARGET TABLES:
+--------------
+1. sensor_raw_data
+2. sensor_alerts
+
+FIELDS IN FLINK CODE (SensorRecord class):
+-------------------------------------------
+- sensorId          (String)
+- sensorType        (String)
+- location          (String)
+- temperature       (double)
+- humidity          (double)
+- pressure          (double)
+- batteryLevel      (double)
+- status            (String)
+- manufacturer      (String)
+- model             (String)
+- firmwareVersion   (String)
+- latitude          (double)
+- longitude         (double)
+
+Total: 13 fields
+
+================================================================================
+CLICKHOUSE SCHEMA (clickhouse-load/01-create-schema.sql)
+================================================================================
+
+TARGET TABLE:
+-------------
+benchmark.sensors_local
+
+FIELDS IN CLICKHOUSE:
+---------------------
+- device_id            (String)     <- NOT sensor_id
+- device_type          (String)     <- NOT sensor_type
+- customer_id          (String)     <- MISSING in Flink
+- site_id              (String)     <- MISSING in Flink
+- latitude             (Float64)
+- longitude            (Float64)
+- altitude             (Float32)    <- MISSING in Flink
+- time                 (DateTime64(3))
+- temperature          (Float32)
+- humidity             (Float32)
+- pressure             (Float32)
+- co2_level            (Float32)    <- MISSING in Flink
+- noise_level          (Float32)    <- MISSING in Flink
+- light_level          (Float32)    <- MISSING in Flink
+- motion_detected      (UInt8)      <- MISSING in Flink
+- battery_level        (Float32)
+- signal_strength      (Float32)    <- MISSING in Flink
+- memory_usage         (Float32)    <- MISSING in Flink
+- cpu_usage            (Float32)    <- MISSING in Flink
+- status               (UInt8)      <- Different type (String in Flink)
+- error_count          (UInt32)     <- MISSING in Flink
+- packets_sent         (UInt64)     <- MISSING in Flink
+- packets_received     (UInt64)     <- MISSING in Flink
+- bytes_sent           (UInt64)     <- MISSING in Flink
+- bytes_received       (UInt64)     <- MISSING in Flink
+- has_alert            (Materialized column)
+
+Total: 25+ fields
+
+================================================================================
+MAPPING ISSUES
+================================================================================
+
+FIELD NAME MISMATCHES:
+----------------------
+Flink              ClickHouse         Status
+-----              ----------         ------
+sensorId       →   device_id          ❌ Different name
+sensorType     →   device_type        ❌ Different name
+location       →   ???                ❌ No equivalent (maybe site_id?)
+
+MISSING IN FLINK (required by ClickHouse):
+------------------------------------------
+- customer_id       (Required by PRIMARY KEY)
+- site_id           (Required by PRIMARY KEY)  
+- altitude
+- co2_level
+- noise_level
+- light_level
+- motion_detected
+- signal_strength
+- memory_usage
+- cpu_usage
+- error_count
+- packets_sent/received
+- bytes_sent/received
+
+EXTRA IN FLINK (not in ClickHouse):
+------------------------------------
+- manufacturer
+- model
+- firmwareVersion
+
+TYPE MISMATCHES:
+----------------
+- status: String (Flink) vs UInt8 (ClickHouse)
+- temperature: double (Flink) vs Float32 (ClickHouse)
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+
+OPTION 1: Update Flink Consumer to Match ClickHouse Schema (Recommended)
+-------------------------------------------------------------------------
+Create new Flink consumer that:
+- Reads from Pulsar
+- Maps to benchmark.sensors_local schema
+- Includes all 25 required fields
+- Uses correct field names and types
+
+OPTION 2: Create Bridge Tables in ClickHouse
+---------------------------------------------
+Create sensor_raw_data and sensor_alerts tables in ClickHouse
+- But these don't match the latest-0 benchmark schema
+- Would need separate pipeline
+
+OPTION 3: Use Existing Code with Different ClickHouse Schema
+-------------------------------------------------------------
+Create different tables in ClickHouse matching Flink schema
+- But loses compatibility with latest-0 benchmarks
+- Not recommended
+
+================================================================================
+RECOMMENDED SOLUTION
+================================================================================
+
+Create new Flink job: benchmark.sensors_local with all fields required
+
+File location: Flink-Benchmark/low_infra_flink/flink-load/
+
+Files needed:
+1. Updated Java consumer matching benchmark.sensors_local
+2. Dockerfile for x86 build
+3. ECR push script
+4. Flink job deployment YAML
+
+Next steps:
+1. Review this comparison
+2. Decide on approach
+3. Create updated Flink consumer code
+4. Build and deploy
+
+================================================================================
+

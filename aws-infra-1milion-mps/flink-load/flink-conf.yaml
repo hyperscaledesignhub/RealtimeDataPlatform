@@ -1,0 +1,57 @@
+# Flink Configuration with Prometheus Metrics Reporter
+# ======================================================
+
+# JobManager Configuration
+jobmanager.rpc.address: flink-jobmanager
+jobmanager.rpc.port: 6123
+jobmanager.memory.process.size: 1600m
+
+# TaskManager Configuration
+taskmanager.memory.process.size: 1728m
+taskmanager.numberOfTaskSlots: 8
+
+# Metrics Configuration
+# =====================
+
+# Enable metrics reporters
+metrics.reporters: prometheus
+
+# Prometheus Reporter Configuration (Flink 1.18+ uses factory.class)
+metrics.reporter.prometheus.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+metrics.reporter.prometheus.port: 9249-9259
+metrics.reporter.prometheus.filterLabelValueCharacters: false
+
+# System Resource Metrics
+metrics.system-resource: true
+metrics.system-resource-probing-interval: 5000
+
+# Latency Tracking
+metrics.latency.interval: 10000
+metrics.latency.granularity: operator
+metrics.latency.history-size: 128
+
+# Web Frontend Configuration
+web.submit.enable: true
+web.cancel.enable: true
+web.tmpdir: /tmp/flink-web
+
+# Checkpointing Configuration
+state.backend: filesystem
+state.checkpoints.dir: file:///opt/flink/checkpoints
+state.savepoints.dir: file:///opt/flink/savepoints
+execution.checkpointing.interval: 60000
+execution.checkpointing.mode: EXACTLY_ONCE
+execution.checkpointing.timeout: 600000
+execution.checkpointing.max-concurrent-checkpoints: 1
+
+# Logging
+taskmanager.log.path: /opt/flink/log
+jobmanager.log.path: /opt/flink/log
+
+blob.server.port: 6124
+query.server.port: 6125
+jobmanager.rpc.address: flink-jobmanager
+jobmanager.rpc.address: flink-jobmanager
+taskmanager.numberOfTaskSlots: 2
+jobmanager.rpc.address: flink-jobmanager
+jobmanager.rpc.address: flink-jobmanager

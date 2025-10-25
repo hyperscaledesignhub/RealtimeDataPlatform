@@ -1,0 +1,29 @@
+# ================================================================================
+# CLICKHOUSE-ONLY DEPLOYMENT - HIGH-PERFORMANCE CONFIGURATION
+# ================================================================================
+# This configuration deploys only ClickHouse components:
+#   - ClickHouse (2 node groups): Database cluster (r6id.4xlarge + NVMe), Query nodes (c5.2xlarge)
+# Total: 2 node groups with high-performance machine types and NVMe storage
+# Estimated Cost: ~$800-1200/month (production-grade ClickHouse performance)
+
+# Enable only ClickHouse
+enable_flink = false
+enable_pulsar = false
+enable_clickhouse = true
+enable_general_nodes = false
+enable_producer = false
+
+# Disable Flink operator in Terraform (will be installed via deploy.sh)
+install_flink_operator = false
+
+# Cost optimization
+use_spot_instances = false
+
+# ClickHouse configuration (from clickhouse high infra)
+clickhouse_desired_size = 6         # r6id.4xlarge (16 vCPU, 128 GiB RAM + NVMe) - 3 shards × 2 replicas
+clickhouse_query_desired_size = 3   # c5.2xlarge (8 vCPU, 16 GiB RAM) - dedicated query nodes
+
+# Cluster configuration
+cluster_name = "benchmark-high-infra"
+aws_region = "us-west-2"
+environment = "production"

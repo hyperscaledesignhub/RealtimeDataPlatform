@@ -1,0 +1,181 @@
+================================================================================
+NODE SELECTOR MAPPING - MERGED INFRASTRUCTURE
+================================================================================
+
+This document shows the correct node selector mappings between:
+1. Terraform node group labels
+2. Kubernetes deployment node selectors
+3. Pod placement strategy
+
+================================================================================
+TERRAFORM NODE GROUPS & LABELS
+================================================================================
+
+1. FLINK TASKMANAGER NODES:
+   Instance: t3.medium (2 vCPU, 4 GB RAM)
+   Labels:
+     - role: flink-taskmanager
+     - workload: flink
+     - service: flink
+
+2. FLINK JOBMANAGER NODES:
+   Instance: t3.small (2 vCPU, 2 GB RAM)
+   Labels:
+     - role: flink-jobmanager
+     - workload: flink
+     - service: flink
+
+3. PULSAR ZOOKEEPER NODES:
+   Instance: t3.small (2 vCPU, 2 GB RAM)
+   Labels:
+     - component: zookeeper
+     - pulsar-role: zookeeper
+     - node-type: zookeeper
+     - workload: pulsar
+     - service: pulsar
+
+4. PULSAR BROKER NODES:
+   Instance: t3.medium (2 vCPU, 4 GB RAM)
+   Labels:
+     - component: broker
+     - pulsar-role: broker
+     - node-type: broker
+     - workload: pulsar
+     - service: pulsar
+
+5. PULSAR BOOKKEEPER NODES:
+   Instance: t3.medium (2 vCPU, 4 GB RAM)
+   Labels:
+     - component: bookie
+     - pulsar-role: bookie
+     - node-type: bookkeeper
+     - workload: pulsar
+     - service: pulsar
+
+6. CLICKHOUSE NODES:
+   Instance: t3.xlarge (4 vCPU, 16 GB RAM)
+   Labels:
+     - workload: clickhouse
+     - node_group: clickhouse_nodes
+     - service: clickhouse
+   Taints:
+     - clickhouse: "true": NoSchedule
+
+7. GENERAL NODES:
+   Instance: t3.small (2 vCPU, 2 GB RAM)
+   Labels:
+     - workload: general
+     - service: shared
+
+================================================================================
+KUBERNETES DEPLOYMENT NODE SELECTORS
+================================================================================
+
+1. FLINK DEPLOYMENT (flink-deployment.yaml):
+   ✅ JobManager pods:
+      nodeSelector:
+        role: flink-jobmanager
+   
+   ✅ TaskManager pods:
+      nodeSelector:
+        role: flink-taskmanager
+
+2. PULSAR DEPLOYMENT (pulsar.yaml):
+   ✅ ZooKeeper pods:
+      nodeSelector:
+        component: zookeeper
+        "pulsar-role": zookeeper
+   
+   ✅ Broker pods:
+      nodeSelector:
+        component: broker
+        "pulsar-role": broker
+   
+   ✅ BookKeeper pods:
+      nodeSelector:
+        component: bookie
+        "pulsar-role": bookie
+   
+   ✅ Topic creation job:
+      nodeSelector:
+        workload: general
+
+3. CLICKHOUSE DEPLOYMENT (deploy-clickhouse-all.yaml):
+   ✅ ClickHouse pods:
+      nodeSelector:
+        node_group: clickhouse_nodes
+      tolerations:
+        - key: clickhouse
+          value: "true"
+          effect: NoSchedule
+
+================================================================================
+POD PLACEMENT VERIFICATION
+================================================================================
+
+To verify correct pod placement after deployment:
+
+1. Check node labels:
+   kubectl get nodes --show-labels
+
+2. Check pod placement:
+   kubectl get pods -o wide -A
+
+3. Check specific workloads:
+   # Flink
+   kubectl get pods -n flink-benchmark -o wide
+   
+   # Pulsar
+   kubectl get pods -n pulsar -o wide
+   
+   # ClickHouse
+   kubectl get pods -n clickhouse -o wide
+
+4. Verify node selectors are working:
+   # Check if pods are scheduled on correct nodes
+   kubectl describe pod <pod-name> -n <namespace>
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+If pods are not scheduling:
+
+1. Check node capacity:
+   kubectl describe nodes
+
+2. Check taints and tolerations:
+   kubectl describe nodes | grep -A5 Taints
+
+3. Check node selector matches:
+   kubectl get nodes -l role=flink-taskmanager
+   kubectl get nodes -l "pulsar-role=broker"
+   kubectl get nodes -l node_group=clickhouse_nodes
+
+4. Check pod events:
+   kubectl describe pod <pod-name> -n <namespace>
+
+================================================================================
+EXPECTED POD DISTRIBUTION
+================================================================================
+
+After deployment, pods should be distributed as:
+
+FLINK NAMESPACE:
+- JobManager pods → flink-jobmanager nodes (t3.small)
+- TaskManager pods → flink-taskmanager nodes (t3.medium)
+
+PULSAR NAMESPACE:
+- ZooKeeper pods → pulsar-zookeeper nodes (t3.small)
+- Broker pods → pulsar-broker nodes (t3.medium)
+- BookKeeper pods → pulsar-bookkeeper nodes (t3.medium)
+
+CLICKHOUSE NAMESPACE:
+- ClickHouse pods → clickhouse-nodes (t3.xlarge)
+
+GENERAL:
+- Operators, utilities → general-nodes (t3.small)
+
+================================================================================
+END OF NODE SELECTOR MAPPING
+================================================================================

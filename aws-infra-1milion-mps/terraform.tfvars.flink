@@ -1,0 +1,29 @@
+# ================================================================================
+# FLINK-ONLY DEPLOYMENT - HIGH-PERFORMANCE CONFIGURATION
+# ================================================================================
+# This configuration deploys only Flink components:
+#   - Flink (2 node groups): JobManager (c5.xlarge), TaskManager (c5.2xlarge)
+# Total: 2 node groups with high-performance machine types
+# Estimated Cost: ~$400-600/month (production-grade Flink performance)
+
+# Enable only Flink
+enable_flink = true
+enable_pulsar = false
+enable_clickhouse = false
+enable_general_nodes = false
+enable_producer = false
+
+# Disable Flink operator in Terraform (will be installed via deploy.sh)
+install_flink_operator = false
+
+# Cost optimization
+use_spot_instances = false
+
+# Flink configuration (high-performance)
+flink_taskmanager_desired_size = 4  # c5.2xlarge (8 vCPU, 16 GiB RAM)
+flink_jobmanager_desired_size = 1   # c5.xlarge (4 vCPU, 8 GiB RAM)
+
+# Cluster configuration
+cluster_name = "benchmark-high-infra"
+aws_region = "us-west-2"
+environment = "production"

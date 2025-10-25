@@ -1,0 +1,531 @@
+================================================================================
+COMPLETE CLICKHOUSE SETUP GUIDE - FLINK BENCHMARK LOW INFRA
+================================================================================
+
+This folder contains scripts for a complete ClickHouse deployment and testing
+setup compatible with the latest-0 benchmark schema.
+
+================================================================================
+PREREQUISITES
+================================================================================
+
+1. AWS EKS Cluster running (via Terraform)
+2. kubectl configured to connect to the cluster
+3. Sufficient EC2 nodes:
+   - 4x t3.small (general workload) for ZooKeeper + utilities
+   - 2x t3.xlarge (ClickHouse nodes)
+
+================================================================================
+FILE OVERVIEW
+================================================================================
+
+00-install-clickhouse.sh    - Full ClickHouse stack installation
+01-create-schema.sql        - Database schema (matches latest-0)
+02-low-rate-writer.py       - Data writer (~25 records/sec)
+03-low-rate-benchmark.py    - Query benchmark (~10 QPS)
+05-deploy.sh                - Deploy data loading & benchmarking
+99-cleanup-all.sh           - Complete teardown script
+
+================================================================================
+DEPLOYMENT ORDER
+================================================================================
+
+┌────────────────────────────────────────────────────────────────────┐
+│  PHASE 1: INFRASTRUCTURE (One-time setup)                          │
+├────────────────────────────────────────────────────────────────────┤
+│  1. Terraform → Create EKS cluster & EC2 nodes                     │
+│  2. Run 00-install-clickhouse.sh → Install operator, ZK, ClickHouse│
+└────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────┐
+│  PHASE 2: DATA LOADING (Can run multiple times)                    │
+├────────────────────────────────────────────────────────────────────┤
+│  3. Run 05-deploy.sh → Create schema, start writer & benchmark     │
+└────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+STEP-BY-STEP INSTALLATION
+================================================================================
+
+STEP 1: Provision AWS Infrastructure (if not already done)
+----------------------------------------------------------
+cd /Users/vijayabhaskarv/IOT/datapipeline-0/Flink-Benchmark/low_infra_flink
+
+# Review configuration
+cat terraform.tfvars
+
+# Create infrastructure
+terraform init
+terraform plan
+terraform apply -auto-approve
+
+# Configure kubectl
+aws eks update-kubeconfig --region us-west-2 --name bench-low-infra
+
+# Verify cluster
+kubectl get nodes
+
+
+STEP 2: Install ClickHouse Stack
+----------------------------------------------------------
+cd clickhouse-load
+
+# Make installation script executable
+chmod +x 00-install-clickhouse.sh
+
+# Run installation (installs operator, ZooKeeper, ClickHouse)
+./00-install-clickhouse.sh
+
+# This will take 5-10 minutes
+# Expected output:
+#   ✅ ClickHouse operator installed
+#   ✅ ZooKeeper cluster deployed (3/3 pods)
+#   ✅ ClickHouse cluster deployed (6/6 pods)
+
+
+STEP 3: Deploy Data Loading & Benchmarking
+----------------------------------------------------------
+# Make deploy script executable
+chmod +x 05-deploy.sh
+
+# Run deployment
+./05-deploy.sh
+
+# This creates:
+#   - Database schema on all 6 ClickHouse pods
+#   - Writer deployment (continuous, ~25 rec/sec)
+#   - Benchmark deployment (continuous, ~10 QPS)
+
+
+STEP 4: Monitor & Verify
+----------------------------------------------------------
+# Check writer logs (should show successful inserts)
+kubectl logs -f deployment/clickhouse-low-rate-writer -n clickhouse
+
+# Check benchmark logs (should show ~10 QPS with <20ms latency)
+kubectl logs -f deployment/clickhouse-low-rate-benchmark -n clickhouse
+
+# Check data counts (should be growing)
+kubectl exec -n clickhouse chi-iot-cluster-repl-iot-cluster-0-0-0 -- \
+  clickhouse-client --query "SELECT count() FROM benchmark.cpu_local"
+
+kubectl exec -n clickhouse chi-iot-cluster-repl-iot-cluster-0-0-0 -- \
+  clickhouse-client --query "SELECT count() FROM benchmark.sensors_local"
+
+# View recent data
+kubectl exec -n clickhouse chi-iot-cluster-repl-iot-cluster-0-0-0 -- \
+  clickhouse-client --query "SELECT * FROM benchmark.sensors_local ORDER BY time DESC LIMIT 5 FORMAT Vertical"
+
+
+================================================================================
+SCHEMA DETAILS (Matching latest-0)
+================================================================================
+
+DATABASE: benchmark
+
+TABLES:
+-------
+1. benchmark.cpu_local (30+ fields)
+   - Server metrics with full CPU breakdown
+   - Primary Key: (service, hostname, toStartOfHour(time))
+   - Partition: Monthly (YYYYMM)
+   - Fields: hostname, region, datacenter, rack, os, arch, team, service,
+             usage_user, usage_system, usage_idle, load1/5/15, etc.
+
+2. benchmark.sensors_local (25+ fields)
+   - IoT sensor data
+   - Primary Key: (customer_id, site_id, device_type)
+   - Partition: Daily (YYYYMMDD)
+   - Fields: device_id, device_type, customer_id, site_id,
+             temperature, humidity, pressure, co2_level, battery_level, etc.
+
+MATERIALIZED COLUMNS:
+- cpu_local.total_usage = usage_user + usage_system
+- sensors_local.has_alert = temp>35 OR humidity>80 OR battery<20
+
+INDEXES:
+- Bloom filter indexes on primary key fields
+- Minmax indexes on numeric fields
+
+
+================================================================================
+PERFORMANCE METRICS
+================================================================================
+
+WRITE PERFORMANCE (Low-Rate Writer):
+-------------------------------------
+Target Rate:      25 records/sec total
+  - CPU:          12.5 records/sec
+  - Sensors:      12.5 records/sec
+Batch Size:       5 records
+Latency:          ~10-20ms per batch
+Resource Usage:   200m CPU, 256Mi RAM
+
+QUERY PERFORMANCE (Benchmark):
+-------------------------------
+Target QPS:       10 queries/sec
+Workers:          2 concurrent threads
+Avg Latency:      10-15ms
+P95 Latency:      15-20ms
+Success Rate:     99-100%
+Resource Usage:   200m CPU, 256Mi RAM
+
+QUERY DISTRIBUTION:
+- single_day_temp:          20% (temperature analytics)
+- single_day_humidity:      20% (humidity analytics)
+- single_day_cpu:           20% (CPU usage analytics)
+- single_day_load:          20% (load average analytics)
+- device_current_status:    10% (recent device status)
+- host_current_status:      10% (recent host status)
+
+
+================================================================================
+INFRASTRUCTURE COST (AWS us-west-2)
+================================================================================
+
+EC2 INSTANCES (Single AZ - us-west-2a):
+----------------------------------------
+4x t3.small   (general):     $0.0208/hour × 4 = $0.0832/hour = ~$60/month
+2x t3.xlarge  (ClickHouse):  $0.1664/hour × 2 = $0.3328/hour = ~$240/month
+
+EBS VOLUMES:
+------------
+ZooKeeper (3 × 50Gi gp3):    $4.50/month
+ClickHouse (6 × 100Gi gp3):  $60/month
+
+NETWORKING:
+-----------
+Single AZ - Data transfer:   FREE (intra-AZ)
+NAT Gateway:                 ~$32/month
+
+EKS CONTROL PLANE:
+------------------
+EKS cluster:                 $73/month
+
+TOTAL ESTIMATED COST:
+---------------------
+On-Demand (single AZ):       ~$470/month
+With Spot instances:         ~$250/month (47% savings)
+
+
+================================================================================
+OPERATIONAL COMMANDS
+================================================================================
+
+START/STOP WRITER:
+------------------
+kubectl scale deployment clickhouse-low-rate-writer --replicas=0 -n clickhouse  # Stop
+kubectl scale deployment clickhouse-low-rate-writer --replicas=1 -n clickhouse  # Start
+
+START/STOP BENCHMARK:
+---------------------
+kubectl scale deployment clickhouse-low-rate-benchmark --replicas=0 -n clickhouse  # Stop
+kubectl scale deployment clickhouse-low-rate-benchmark --replicas=1 -n clickhouse  # Start
+
+VIEW LOGS:
+----------
+kubectl logs -f deployment/clickhouse-low-rate-writer -n clickhouse
+kubectl logs -f deployment/clickhouse-low-rate-benchmark -n clickhouse
+
+CHECK CLUSTER STATUS:
+---------------------
+kubectl get chi -n clickhouse
+kubectl get pods -n clickhouse
+kubectl get svc -n clickhouse
+
+QUERY DATA:
+-----------
+kubectl exec -n clickhouse chi-iot-cluster-repl-iot-cluster-0-0-0 -- \
+  clickhouse-client --query "SELECT count() FROM benchmark.cpu_local"
+
+kubectl exec -n clickhouse chi-iot-cluster-repl-iot-cluster-0-0-0 -- \
+  clickhouse-client --query "SELECT * FROM benchmark.sensors_local ORDER BY time DESC LIMIT 10 FORMAT Vertical"
+
+CHECK ZOOKEEPER:
+----------------
+kubectl get pods -n zoons
+kubectl exec -n zoons zookeeper-0 -- zkCli.sh ls /
+
+
+================================================================================
+CLEANUP PROCEDURE
+================================================================================
+
+OPTION 1: Keep Infrastructure, Delete Data Only
+------------------------------------------------
+./05-deploy.sh
+# This will drop and recreate tables (data is lost)
+
+OPTION 2: Delete Everything Except EKS Cluster
+-----------------------------------------------
+chmod +x 99-cleanup-all.sh
+./99-cleanup-all.sh
+
+# This removes:
+#   - Data loading pods
+#   - ClickHouse cluster
+#   - ZooKeeper cluster
+#   - All namespaces
+# But keeps:
+#   - EKS cluster
+#   - EC2 nodes
+#   - ClickHouse operator
+
+OPTION 3: Complete Teardown (Including AWS Infrastructure)
+-----------------------------------------------------------
+# First run cleanup script
+./99-cleanup-all.sh
+
+# Then destroy Terraform infrastructure
+cd /Users/vijayabhaskarv/IOT/datapipeline-0/Flink-Benchmark/low_infra_flink
+terraform destroy -auto-approve
+
+# This removes EVERYTHING:
+#   - All Kubernetes resources
+#   - EKS cluster
+#   - All EC2 nodes
+#   - VPC and networking
+#   - S3 buckets
+#   - IAM roles
+
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+ZOOKEEPER PODS PENDING:
+-----------------------
+Issue: Not enough memory on general nodes
+Solution:
+  1. Check node memory: kubectl top nodes
+  2. Scale general nodes: Edit main.tf, set desired_size=4
+  3. Apply: terraform apply
+  4. Reduce ZooKeeper memory:
+     kubectl patch statefulset zookeeper -n zoons --type='json' \
+       -p='[{"op":"replace","path":"/spec/template/spec/containers/0/resources/requests/memory","value":"768Mi"}]'
+
+CLICKHOUSE PODS NOT STARTING:
+------------------------------
+Issue: Node affinity/taints preventing scheduling
+Solution:
+  1. Check node labels: kubectl get nodes --show-labels
+  2. Verify ClickHouse nodes have: node_group=clickhouse_nodes
+  3. Check tolerations in deployment
+
+DNS RESOLUTION ERRORS:
+----------------------
+Issue: Pods can't resolve ClickHouse service
+Solution:
+  - Use full service name: clickhouse-iot-cluster-repl.clickhouse.svc.cluster.local
+  - Deploy pods in same namespace (clickhouse)
+  - Check CoreDNS is running: kubectl get pods -n kube-system -l k8s-app=kube-dns
+
+WRITER GETTING 404 ERRORS:
+---------------------------
+Issue: Tables don't exist on all ClickHouse pods
+Solution:
+  - The 05-deploy.sh script now creates tables on ALL 6 pods
+  - Verify: kubectl exec -n clickhouse <pod-name> -- clickhouse-client --query "SHOW TABLES FROM benchmark"
+
+QUERIES FAILING:
+----------------
+Issue: No data in tables yet
+Solution:
+  - Wait 1-2 minutes for writer to populate data
+  - Check writer is running: kubectl get pods -n clickhouse -l app=clickhouse-low-rate-writer
+  - Check data exists: kubectl exec ... --query "SELECT count() FROM benchmark.cpu_local"
+
+
+================================================================================
+MAINTENANCE
+================================================================================
+
+UPDATE CONFIGMAPS (after editing Python scripts):
+--------------------------------------------------
+cd /Users/vijayabhaskarv/IOT/datapipeline-0/Flink-Benchmark/low_infra_flink/clickhouse-load
+
+# Delete old ConfigMap
+kubectl delete configmap clickhouse-low-rate-scripts-py -n clickhouse
+
+# Recreate with new scripts
+kubectl create configmap clickhouse-low-rate-scripts-py \
+  --from-file=02-low-rate-writer.py \
+  --from-file=03-low-rate-benchmark.py \
+  -n clickhouse
+
+# Restart deployments to pick up changes
+kubectl rollout restart deployment clickhouse-low-rate-writer -n clickhouse
+kubectl rollout restart deployment clickhouse-low-rate-benchmark -n clickhouse
+
+
+SCALE RESOURCES:
+----------------
+# Increase writer rate (edit 02-low-rate-writer.py):
+self.target_rate = 50  # Change from 25 to 50
+
+# Increase query rate (edit 03-low-rate-benchmark.py):
+self.target_qps = 20  # Change from 10 to 20
+
+# Then update ConfigMap and restart (see above)
+
+
+ADD MORE CLICKHOUSE NODES:
+--------------------------
+cd /Users/vijayabhaskarv/IOT/datapipeline-0/Flink-Benchmark/low_infra_flink
+
+# Edit main.tf: Find clickhouse_desired_size and increase
+vim main.tf  # Change clickhouse_desired_size = 2 to 4
+
+# Apply changes
+terraform apply
+
+
+================================================================================
+MONITORING & METRICS
+================================================================================
+
+REAL-TIME MONITORING:
+---------------------
+# Watch all pods
+watch kubectl get pods -n clickhouse
+
+# Monitor metrics
+kubectl top pods -n clickhouse
+kubectl top nodes
+
+# Check ClickHouse metrics
+kubectl exec -n clickhouse chi-iot-cluster-repl-iot-cluster-0-0-0 -- \
+  clickhouse-client --query "SELECT * FROM system.metrics WHERE metric LIKE '%Query%' FORMAT Vertical"
+
+
+DATA VERIFICATION:
+------------------
+# Check data distribution across shards
+kubectl exec -n clickhouse chi-iot-cluster-repl-iot-cluster-0-0-0 -- \
+  clickhouse-client --multiquery <<EOF
+SELECT 'CPU Table' as table, count() as records FROM benchmark.cpu_local;
+SELECT 'Sensors Table' as table, count() as records FROM benchmark.sensors_local;
+EOF
+
+# Check recent data
+kubectl exec -n clickhouse chi-iot-cluster-repl-iot-cluster-0-0-0 -- \
+  clickhouse-client --query "SELECT max(time) as latest_time, count() as count FROM benchmark.cpu_local"
+
+
+BENCHMARK RESULTS:
+------------------
+# View continuous benchmark metrics (refreshes every 30 seconds)
+kubectl logs -f deployment/clickhouse-low-rate-benchmark -n clickhouse
+
+
+================================================================================
+QUICK START (From Scratch)
+================================================================================
+
+# 1. Provision AWS infrastructure
+cd /Users/vijayabhaskarv/IOT/datapipeline-0/Flink-Benchmark/low_infra_flink
+terraform apply -auto-approve
+aws eks update-kubeconfig --region us-west-2 --name bench-low-infra
+
+# 2. Install ClickHouse stack
+cd clickhouse-load
+chmod +x *.sh
+./00-install-clickhouse.sh
+
+# 3. Deploy data loading
+./05-deploy.sh
+
+# 4. Monitor
+kubectl logs -f deployment/clickhouse-low-rate-writer -n clickhouse
+
+
+================================================================================
+COMPLETE TEARDOWN
+================================================================================
+
+# 1. Delete ClickHouse resources
+cd /Users/vijayabhaskarv/IOT/datapipeline-0/Flink-Benchmark/low_infra_flink/clickhouse-load
+chmod +x 99-cleanup-all.sh
+./99-cleanup-all.sh
+
+# 2. Destroy AWS infrastructure
+cd ..
+terraform destroy -auto-approve
+
+# Total cleanup time: ~15-20 minutes
+
+
+================================================================================
+ARCHITECTURE
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    EKS Cluster (us-west-2a)                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌─────────────────────┐  │
+│  │  ZooKeeper   │  │  ClickHouse  │  │   Data Loading      │  │
+│  │  Namespace   │  │  Namespace   │  │   (in clickhouse)   │  │
+│  │   'zoons'    │  │ 'clickhouse' │  │                     │  │
+│  ├──────────────┤  ├──────────────┤  ├─────────────────────┤  │
+│  │              │  │              │  │ Writer Deployment   │  │
+│  │ zookeeper-0  │  │ Operator     │  │  └→ 25 rec/sec      │  │
+│  │ zookeeper-1  │  │              │  │                     │  │
+│  │ zookeeper-2  │  │ CHI:         │  │ Benchmark Deploy    │  │
+│  │              │  │ iot-cluster  │  │  └→ 10 QPS          │  │
+│  │ 3 replicas   │  │              │  │                     │  │
+│  │ 768Mi each   │  │ 3 shards ×   │  │                     │  │
+│  │              │  │ 2 replicas = │  │                     │  │
+│  │ On general   │  │ 6 pods       │  │                     │  │
+│  │ nodes        │  │              │  │                     │  │
+│  │ (t3.small)   │  │ On ClickHouse│  │                     │  │
+│  │              │  │ nodes        │  │                     │  │
+│  │              │  │ (t3.xlarge)  │  │                     │  │
+│  └──────────────┘  └──────────────┘  └─────────────────────┘  │
+│                                                                 │
+│  All in Single AZ (us-west-2a) → FREE data transfer            │
+└─────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+NETWORK TOPOLOGY
+================================================================================
+
+Writer → ClickHouse Service → Load Balanced across 6 pods
+  ↓
+clickhouse-iot-cluster-repl.clickhouse.svc.cluster.local:8123
+  ↓
+Distributes to:
+  - Shard 0, Replica 0 (chi-iot-cluster-repl-iot-cluster-0-0-0)
+  - Shard 0, Replica 1 (chi-iot-cluster-repl-iot-cluster-0-1-0)
+  - Shard 1, Replica 0 (chi-iot-cluster-repl-iot-cluster-1-0-0)
+  - Shard 1, Replica 1 (chi-iot-cluster-repl-iot-cluster-1-1-0)
+  - Shard 2, Replica 0 (chi-iot-cluster-repl-iot-cluster-2-0-0)
+  - Shard 2, Replica 1 (chi-iot-cluster-repl-iot-cluster-2-1-0)
+
+Data Distribution:
+  - Tables created on ALL 6 pods (local tables)
+  - Writes distributed via load balancer
+  - Each shard stores ~1/3 of data
+  - Each replica within shard has same data
+
+
+================================================================================
+COMPATIBILITY NOTES
+================================================================================
+
+✅ Schema matches clickhouse-benchmark/latest-0
+✅ Query patterns match latest-0 benchmark
+✅ Compatible with production workloads
+✅ Can scale up rate/QPS by editing Python scripts
+
+Differences from latest-0:
+- Using local tables (not distributed) for simplified setup
+- Lower rates (25 rec/s vs 1,556 rec/s) for cost optimization
+- Continuous benchmark (vs one-time runs)
+
+
+================================================================================
+END OF GUIDE
+================================================================================
+

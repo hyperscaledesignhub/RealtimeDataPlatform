@@ -1,0 +1,33 @@
+# ================================================================================
+# PULSAR-ONLY DEPLOYMENT - HIGH-PERFORMANCE CONFIGURATION
+# ================================================================================
+# This configuration deploys only Pulsar components:
+#   - Pulsar (3 node groups): ZooKeeper (t3.medium), Broker-Bookie (i3en.6xlarge + NVMe), Proxy (c5.2xlarge)
+# Total: 3 node groups with high-performance machine types and NVMe storage
+# Estimated Cost: ~$1200-1800/month (production-grade Pulsar performance)
+
+# Enable only Pulsar
+enable_flink = false
+enable_pulsar = true
+enable_clickhouse = false
+enable_general_nodes = false
+enable_producer = true
+
+# Disable Flink operator in Terraform (will be installed via deploy.sh)
+install_flink_operator = false
+
+# Cost optimization
+use_spot_instances = false
+
+# Pulsar configuration (from pulsar high infra)
+pulsar_zookeeper_desired_size = 3   # t3.medium (2 vCPU, 4 GiB RAM)
+pulsar_broker_desired_size = 4      # i3en.6xlarge (24 vCPU, 192 GiB RAM + NVMe) - combined broker-bookie
+pulsar_proxy_desired_size = 2       # c5.2xlarge (8 vCPU, 16 GiB RAM)
+
+# Producer configuration
+producer_desired_size = 3           # c5.4xlarge (16 vCPU, 32 GiB RAM) - IoT data generators
+
+# Cluster configuration
+cluster_name = "benchmark-high-infra"
+aws_region = "us-west-2"
+environment = "production"

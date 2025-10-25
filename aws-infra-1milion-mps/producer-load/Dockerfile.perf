@@ -1,0 +1,87 @@
+# ================================================================================
+# Dockerfile for IoT Performance Producer (pulsar-sensor-perf)
+# Uses the compiled pulsar-testclient with IoTPerformanceProducer
+# 
+# Features:
+# - AVRO serialization format by default
+# - Automatic device ID distribution across multiple pods
+# - Built-in SensorData.avsc schema included
+# - Environment variables for configuration:
+#   - PULSAR_URL: Pulsar service URL
+#   - PULSAR_TOPIC: Target topic name
+#   - MESSAGE_RATE: Messages per second per pod
+#   - TOTAL_DEVICE_COUNT: Total number of devices
+#   - NUM_REPLICAS: Number of pod replicas for device distribution
+#   - USE_AVRO: Enable/disable AVRO serialization
+# 
+# Device ID Distribution:
+# - Automatically calculates device ID ranges per pod
+# - Pod 0: Devices 1 to (TOTAL_DEVICE_COUNT/NUM_REPLICAS)
+# - Pod 1: Devices (TOTAL_DEVICE_COUNT/NUM_REPLICAS)+1 to (2*TOTAL_DEVICE_COUNT/NUM_REPLICAS)
+# - And so on...
+# 
+# Usage Examples:
+# Default AVRO: docker run producer-perf:latest
+# Custom topic: docker run producer-perf:latest "persistent://public/default/my-topic"
+# Kubernetes: kubectl apply -f producer-deployment-perf.yaml
+# ================================================================================
+
+FROM --platform=linux/amd64 eclipse-temurin:17-jre-alpine
+
+# Install bash for better container debugging
+RUN apk add --no-cache bash
+
+# Create app directory
+WORKDIR /app
+
+# Copy the pulsar-sensor-perf binary script
+COPY pulsar-sensor-perf /app/pulsar-sensor-perf
+RUN chmod +x /app/pulsar-sensor-perf
+
+# Copy the entrypoint script for device ID distribution
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Copy the compiled target directory (contains classes and dependencies)
+# This must be copied AFTER pulsar-sensor-perf as it contains the compiled IoTPerformanceProducer
+COPY target /app/target
+
+# Copy AVRO schema files for reference
+COPY src/main/resources/avro /app/avro-schemas
+
+# Create logs directory
+RUN mkdir -p /app/logs
+
+# Set default environment variables
+ENV PULSAR_URL="pulsar://localhost:6650" \
+    PULSAR_TOPIC="persistent://public/default/iot-sensor-data" \
+    MESSAGE_RATE="250000" \
+    TOTAL_DEVICE_COUNT="100000" \
+    NUM_REPLICAS="3" \
+    NUM_MESSAGES="0" \
+    STATS_INTERVAL="10" \
+    USE_AVRO="true" \
+    SCHEMA_FILE="" \
+    SCHEMA_REGISTRY_URL="" \
+    JAVA_OPTS="-Xms512m -Xmx1024m -XX:+UseG1GC"
+
+# Create a non-root user for security
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -u 1001 -S appuser -G appgroup && \
+    chown -R appuser:appgroup /app
+USER appuser
+
+# Expose port for metrics (if needed)
+EXPOSE 8080
+
+# Health check to ensure the producer is running
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD ps aux | grep -v grep | grep IoTPerformanceProducer || exit 1
+
+# Run the IoT Performance Producer with dynamic device ID distribution
+ENTRYPOINT ["/app/entrypoint.sh"]
+
+# Default command arguments (topic name)
+# Device ID ranges are automatically calculated by entrypoint.sh based on NUM_REPLICAS and pod instance
+CMD ["persistent://public/default/iot-sensor-data"]
+
