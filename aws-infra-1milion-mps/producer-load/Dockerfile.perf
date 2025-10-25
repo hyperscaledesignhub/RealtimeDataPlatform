@@ -42,9 +42,9 @@ RUN chmod +x /app/pulsar-sensor-perf
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
-# Copy the compiled target directory (contains classes and dependencies)
+# Copy the compiled libs directory (contains classes and dependencies)
 # This must be copied AFTER pulsar-sensor-perf as it contains the compiled IoTPerformanceProducer
-COPY target /app/target
+COPY libs /app/target
 
 # Copy AVRO schema files for reference
 COPY src/main/resources/avro /app/avro-schemas

@@ -20,8 +20,9 @@ The Dockerfile.perf has been updated to support AVRO serialization format by def
 - Updated documentation to reflect AVRO as default format
 
 ### 4. Updated Dependencies
-- Copied the latest target directory with AVRO-enabled IoTPerformanceProducer
+- Copied the latest libs directory (renamed from target) with AVRO-enabled IoTPerformanceProducer
 - Updated pulsar-sensor-perf script
+- **Note**: The compiled libraries are stored in `libs/` directory instead of `target/` to allow Git tracking
 
 ## Usage
 

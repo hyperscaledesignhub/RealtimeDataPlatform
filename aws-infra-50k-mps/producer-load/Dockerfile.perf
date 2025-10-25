@@ -15,9 +15,9 @@ WORKDIR /app
 COPY pulsar-sensor-perf /app/pulsar-sensor-perf
 RUN chmod +x /app/pulsar-sensor-perf
 
-# Copy the compiled target directory (contains classes and dependencies)
+# Copy the compiled libs directory (contains classes and dependencies)
 # This must be copied AFTER pulsar-sensor-perf as it contains the compiled IoTPerformanceProducer
-COPY target /app/target
+COPY libs /app/target
 
 # Set default environment variables
 ENV PULSAR_URL="pulsar://localhost:6650" \
