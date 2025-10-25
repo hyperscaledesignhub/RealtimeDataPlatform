@@ -1,0 +1,123 @@
+# Prometheus Scrape Annotations for Flink Pods
+# ==============================================
+# Add these annotations to your Flink JobManager and TaskManager pod specs
+
+# For Flink JobManager Deployment/StatefulSet:
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-jobmanager
+  namespace: flink  # Change to your namespace
+spec:
+  selector:
+    matchLabels:
+      app: flink
+      component: jobmanager
+  template:
+    metadata:
+      labels:
+        app: flink
+        component: jobmanager
+      annotations:
+        # Prometheus scrape annotations
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9249"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: jobmanager
+        image: flink:1.18.0
+        ports:
+        - containerPort: 8081
+          name: webui
+        - containerPort: 6123
+          name: rpc
+        - containerPort: 9249
+          name: metrics
+        volumeMounts:
+        - name: flink-config
+          mountPath: /opt/flink/conf/flink-conf.yaml
+          subPath: flink-conf.yaml
+        - name: flink-prometheus-jar
+          mountPath: /opt/flink/lib/flink-metrics-prometheus-1.18.0.jar
+          subPath: flink-metrics-prometheus-1.18.0.jar
+      volumes:
+      - name: flink-config
+        configMap:
+          name: flink-config
+      - name: flink-prometheus-jar
+        emptyDir: {}
+      initContainers:
+      - name: download-prometheus-jar
+        image: curlimages/curl:latest
+        command:
+        - sh
+        - -c
+        - |
+          curl -L https://repo1.maven.org/maven2/org/apache/flink/flink-metrics-prometheus/1.18.0/flink-metrics-prometheus-1.18.0.jar \
+            -o /opt/flink/lib/flink-metrics-prometheus-1.18.0.jar
+        volumeMounts:
+        - name: flink-prometheus-jar
+          mountPath: /opt/flink/lib
+
+---
+# For Flink TaskManager Deployment/StatefulSet:
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-taskmanager
+  namespace: flink  # Change to your namespace
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: flink
+      component: taskmanager
+  template:
+    metadata:
+      labels:
+        app: flink
+        component: taskmanager
+      annotations:
+        # Prometheus scrape annotations
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9249"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: taskmanager
+        image: flink:1.18.0
+        ports:
+        - containerPort: 6121
+          name: data
+        - containerPort: 6122
+          name: rpc
+        - containerPort: 9249
+          name: metrics
+        volumeMounts:
+        - name: flink-config
+          mountPath: /opt/flink/conf/flink-conf.yaml
+          subPath: flink-conf.yaml
+        - name: flink-prometheus-jar
+          mountPath: /opt/flink/lib/flink-metrics-prometheus-1.18.0.jar
+          subPath: flink-metrics-prometheus-1.18.0.jar
+      volumes:
+      - name: flink-config
+        configMap:
+          name: flink-config
+      - name: flink-prometheus-jar
+        emptyDir: {}
+      initContainers:
+      - name: download-prometheus-jar
+        image: curlimages/curl:latest
+        command:
+        - sh
+        - -c
+        - |
+          curl -L https://repo1.maven.org/maven2/org/apache/flink/flink-metrics-prometheus/1.18.0/flink-metrics-prometheus-1.18.0.jar \
+            -o /opt/flink/lib/flink-metrics-prometheus-1.18.0.jar
+        volumeMounts:
+        - name: flink-prometheus-jar
+          mountPath: /opt/flink/lib
+

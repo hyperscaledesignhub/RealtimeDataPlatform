@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# IoT Performance Producer Binary
+# Wrapper script for pulsar-sensor-perf
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Set JAVA_HOME if not already set
+if [ -z "$JAVA_HOME" ]; then
+    if command -v java >/dev/null 2>&1; then
+        JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+    else
+        echo "Error: JAVA_HOME not set and java command not found"
+        exit 1
+    fi
+fi
+
+# Set classpath - include all dependencies
+CLASSPATH="$SCRIPT_DIR/target/classes"
+
+# Add all dependency jars from target/dependency if they exist
+if [ -d "$SCRIPT_DIR/target/dependency" ]; then
+    for jar in "$SCRIPT_DIR/target/dependency"/*.jar; do
+        if [ -f "$jar" ]; then
+            CLASSPATH="$CLASSPATH:$jar"
+        fi
+    done
+fi
+
+# Add pulsar-testclient jar if it exists
+if [ -f "$SCRIPT_DIR/target/pulsar-testclient-4.1.1.jar" ]; then
+    CLASSPATH="$CLASSPATH:$SCRIPT_DIR/target/pulsar-testclient-4.1.1.jar"
+fi
+
+# Run the IoT Performance Producer
+exec "$JAVA_HOME/bin/java" \
+    -cp "$CLASSPATH" \
+    -Dlog4j.configurationFile=log4j2.yaml \
+    org.apache.pulsar.testclient.IoTPerformanceProducer \
+    "$@"

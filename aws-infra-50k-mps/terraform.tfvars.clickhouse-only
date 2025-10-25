@@ -1,0 +1,26 @@
+# ================================================================================
+# CLICKHOUSE ONLY DEPLOYMENT - SINGLE AZ OPTIMIZED
+# ================================================================================
+# This configuration deploys only ClickHouse infrastructure
+# All worker nodes run in single AZ (us-west-2a) for cost savings
+# Estimated Cost: ~$150-200/month (on-demand, single AZ), ~$75-100/month (spot, single AZ)
+
+# Enable only ClickHouse
+enable_flink = false
+enable_pulsar = false
+enable_clickhouse = true
+enable_general_nodes = true  # Required for ClickHouse operator
+
+# Disable Flink operator (not needed for ClickHouse-only deployment)
+install_flink_operator = false
+
+# Cost optimization
+use_spot_instances = false
+
+# ClickHouse configuration
+clickhouse_desired_size = 4  # Single node for dev
+
+# Cluster configuration
+cluster_name = "bench-low-infra"
+aws_region = "us-west-2"
+environment = "development"

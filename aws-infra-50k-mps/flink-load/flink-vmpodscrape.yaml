@@ -1,0 +1,17 @@
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: flink-metrics
+  namespace: pulsar
+spec:
+  selector:
+    matchLabels:
+      app: iot-flink-job
+  namespaceSelector:
+    matchNames:
+      - flink-benchmark
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+

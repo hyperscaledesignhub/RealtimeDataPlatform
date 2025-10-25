@@ -1,0 +1,37 @@
+# ================================================================================
+# Dockerfile for IoT Performance Producer (pulsar-sensor-perf)
+# Uses the compiled pulsar-testclient with IoTPerformanceProducer
+# ================================================================================
+
+FROM --platform=linux/amd64 eclipse-temurin:17-jre-alpine
+
+# Install bash for better container debugging
+RUN apk add --no-cache bash
+
+# Create app directory
+WORKDIR /app
+
+# Copy the pulsar-sensor-perf binary script
+COPY pulsar-sensor-perf /app/pulsar-sensor-perf
+RUN chmod +x /app/pulsar-sensor-perf
+
+# Copy the compiled target directory (contains classes and dependencies)
+# This must be copied AFTER pulsar-sensor-perf as it contains the compiled IoTPerformanceProducer
+COPY target /app/target
+
+# Set default environment variables
+ENV PULSAR_URL="pulsar://localhost:6650" \
+    PULSAR_TOPIC="persistent://public/default/iot-sensor-data" \
+    MESSAGE_RATE="1000" \
+    DEVICE_ID_MIN="1" \
+    DEVICE_ID_MAX="100000" \
+    NUM_MESSAGES="0" \
+    STATS_INTERVAL="10" \
+    JAVA_OPTS="-Xms512m -Xmx1024m"
+
+# Run the IoT Performance Producer
+ENTRYPOINT ["/app/pulsar-sensor-perf"]
+
+# Default command arguments (can be overridden)
+CMD ["-u", "${PULSAR_URL}", "-r", "${MESSAGE_RATE}", "--device-id-min", "${DEVICE_ID_MIN}", "--device-id-max", "${DEVICE_ID_MAX}", "-m", "${NUM_MESSAGES}", "-i", "${STATS_INTERVAL}", "${PULSAR_TOPIC}"]
+

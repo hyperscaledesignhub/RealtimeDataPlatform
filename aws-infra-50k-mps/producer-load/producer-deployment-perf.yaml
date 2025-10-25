@@ -1,0 +1,125 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: iot-pipeline
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iot-perf-producer
+  namespace: iot-pipeline
+  labels:
+    app: iot-perf-producer
+    component: perf-producer
+spec:
+  replicas: 3  # Scale based on desired throughput
+  selector:
+    matchLabels:
+      app: iot-perf-producer
+  template:
+    metadata:
+      labels:
+        app: iot-perf-producer
+        component: perf-producer
+    spec:
+      # Place on producer nodes
+      nodeSelector:
+        workload: bench-producer
+      
+      containers:
+      - name: perf-producer
+        image: 343218179954.dkr.ecr.us-west-2.amazonaws.com/bench-low-infra-iot-perf-producer:latest
+        imagePullPolicy: Always
+        
+        # Override CMD with actual arguments
+        args:
+          - "-u"
+          - "pulsar://pulsar-proxy.pulsar.svc.cluster.local:6650"
+          - "-r"
+          - "10000"  # 10K messages per second per pod
+          - "--device-id-min"
+          - "1"
+          - "--device-id-max"
+          - "100000"  # 100K devices
+          - "-m"
+          - "0"  # Run indefinitely (0 = infinite)
+          - "-i"
+          - "10"  # Stats every 10 seconds
+          - "persistent://public/default/iot-sensor-data"
+        
+        env:
+        - name: JAVA_OPTS
+          value: "-Xms512m -Xmx1024m -XX:+UseG1GC"
+        
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "1.5Gi"
+            cpu: "1000m"
+        
+        # Liveness probe
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - ps aux | grep java | grep -v grep
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          failureThreshold: 3
+        
+        # Readiness probe
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - ps aux | grep java | grep -v grep
+          initialDelaySeconds: 10
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: perf-producer-config
+  namespace: iot-pipeline
+data:
+  README.txt: |
+    IoT Performance Producer Configuration
+    =======================================
+    
+    This producer uses the pulsar-sensor-perf binary (IoTPerformanceProducer)
+    to generate realistic IoT sensor data with device ID range control.
+    
+    Configuration:
+    - Replicas: 3 pods
+    - Messages per second per pod: 10,000
+    - Total throughput: 30,000 msg/sec
+    - Device ID range: 1 to 100,000
+    - Partitions: 8 (matches Flink parallelism)
+    - Stats interval: 10 seconds
+    
+    Features:
+    - Device ID range control (--device-id-min, --device-id-max)
+    - Rate limiting per pod (-r)
+    - Distributed message generation across device range
+    - Real-time statistics output (-i)
+    
+    Schema:
+    - Device IDs: dev-0000001 to dev-0100000
+    - Device Types: temperature_sensor, humidity_sensor, pressure_sensor, etc.
+    - Customers: 1000 customers (cust-000000 to cust-000999)
+    - Sites: 100 sites (site-00000 to site-00099)
+    - 25+ sensor fields per message (temperature, humidity, pressure, etc.)
+    
+    Scaling:
+    - To increase throughput: kubectl scale deployment iot-perf-producer -n iot-pipeline --replicas=5
+    - To adjust per-pod rate: Update the -r argument in the deployment
+    
+    Monitoring:
+    - View logs: kubectl logs -f deployment/iot-perf-producer -n iot-pipeline
+    - View all pods: kubectl get pods -n iot-pipeline -l app=iot-perf-producer
+
+

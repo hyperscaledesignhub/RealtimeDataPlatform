@@ -1,0 +1,27 @@
+# ================================================================================
+# FLINK ONLY DEPLOYMENT - SINGLE AZ OPTIMIZED
+# ================================================================================
+# This configuration deploys only Flink infrastructure
+# All worker nodes run in single AZ (us-west-2a) for cost savings
+# Estimated Cost: ~$120-150/month (on-demand, single AZ), ~$60-75/month (spot, single AZ)
+
+# Enable only Flink
+enable_flink = true
+enable_pulsar = false
+enable_clickhouse = false
+enable_general_nodes = true  # Required for Flink operator
+
+# Install Flink operator (needed for Flink)
+install_flink_operator = true
+
+# Cost optimization
+use_spot_instances = false
+
+# Flink configuration
+flink_taskmanager_desired_size = 2
+flink_jobmanager_desired_size = 1
+
+# Cluster configuration
+cluster_name = "bench-low-infra"
+aws_region = "us-west-2"
+environment = "development"

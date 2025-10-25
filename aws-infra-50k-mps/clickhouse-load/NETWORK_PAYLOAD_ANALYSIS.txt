@@ -1,0 +1,416 @@
+================================================================================
+NETWORK PAYLOAD SIZE ANALYSIS - JAVA SERIALIZATION
+IoT Pipeline Data Transmission - CPU and Sensor Records
+================================================================================
+
+Schema: Matching clickhouse-benchmark/latest-0 (TSBS-style)
+Date: October 2025
+Format: Binary/JSON comparison for Java-based data transmission
+
+================================================================================
+1. CPU METRICS TABLE PAYLOAD SIZE
+================================================================================
+
+Field Name                Type              Avg Size (bytes)   Notes
+--------------------------------------------------------------------------------
+STRING FIELDS (Variable Length):
+hostname                  String            12-20              e.g., "server_0123"
+region                    String            10-15              e.g., "us-east-1"
+datacenter                String            6-8                e.g., "dc-01"
+rack                      String            8-10               e.g., "rack-01"
+os                        String            6-10               e.g., "ubuntu"
+arch                      String            6-10               e.g., "x86_64"
+team                      String            8-10               e.g., "team-05"
+service                   String            12-20              e.g., "api-gateway"
+service_version           String            4-6                e.g., "v2.1"
+service_environment       String            4-8                e.g., "prod"
+
+TIMESTAMP FIELD:
+time                      DateTime64(3)     8                  Long (milliseconds)
+
+NUMERIC FIELDS (Fixed Size):
+usage_user                Float32           4                  
+usage_system              Float32           4                  
+usage_idle                Float32           4                  
+usage_nice                Float32           4                  
+usage_iowait              Float32           4                  
+usage_irq                 Float32           4                  
+usage_softirq             Float32           4                  
+usage_steal               Float32           4                  
+usage_guest               Float32           4                  
+usage_guest_nice          Float32           4                  
+load1                     Float32           4                  
+load5                     Float32           4                  
+load15                    Float32           4                  
+n_cpus                    UInt16            2                  
+n_users                   UInt16            2                  
+n_processes               UInt32            4                  
+uptime_seconds            UInt64            8                  
+context_switches          UInt64            8                  
+interrupts                UInt64            8                  
+software_interrupts       UInt64            8                  
+
+SUBTOTALS:
+  String fields (10):     86-117 bytes (avg: ~102 bytes)
+  Timestamp (1):          8 bytes
+  Numeric fields (20):    96 bytes
+  
+TOTAL PER CPU RECORD:     206 bytes (estimated, binary format)
+
+
+--------------------------------------------------------------------------------
+SERIALIZATION FORMAT COMPARISON - CPU RECORD:
+--------------------------------------------------------------------------------
+
+1. BINARY (Protocol Buffers/Avro/Kryo):
+   - Field data:            206 bytes
+   - Field IDs/tags:        ~30 bytes
+   - Length prefixes:       ~20 bytes
+   TOTAL:                   ~256 bytes per record
+
+2. JSON (Compact, no whitespace):
+   - Field names:           ~400 bytes (31 field names with quotes/colons)
+   - Field values:          ~250 bytes
+   - Braces/commas:         ~35 bytes
+   TOTAL:                   ~685 bytes per record
+
+3. JSON (Pretty printed):
+   - Add indentation/newlines: +150 bytes
+   TOTAL:                   ~835 bytes per record
+
+4. TSV (Tab-Separated Values):
+   - No field names:        206 bytes (just values)
+   - Delimiters:           30 bytes (tabs)
+   TOTAL:                   ~236 bytes per record
+
+
+RECOMMENDED: Protocol Buffers or Avro (~256 bytes per CPU record)
+
+
+================================================================================
+2. SENSOR METRICS TABLE PAYLOAD SIZE
+================================================================================
+
+Field Name                Type              Avg Size (bytes)   Notes
+--------------------------------------------------------------------------------
+STRING FIELDS (Variable Length):
+device_id                 String            12-16              e.g., "device_00123"
+device_type               String            8-15               e.g., "temperature"
+customer_id               String            12-16              e.g., "customer_0045"
+site_id                   String            8-12               e.g., "site_023"
+
+LOCATION FIELDS (Fixed):
+latitude                  Float64           8                  
+longitude                 Float64           8                  
+altitude                  Float32           4                  
+
+TIMESTAMP FIELD:
+time                      DateTime64(3)     8                  Long (milliseconds)
+
+SENSOR READING FIELDS (Fixed):
+temperature               Float32           4                  
+humidity                  Float32           4                  
+pressure                  Float32           4                  
+co2_level                 Float32           4                  
+noise_level               Float32           4                  
+light_level               Float32           4                  
+motion_detected           UInt8             1                  
+
+DEVICE METRICS (Fixed):
+battery_level             Float32           4                  
+signal_strength           Float32           4                  
+memory_usage              Float32           4                  
+cpu_usage                 Float32           4                  
+
+STATUS FIELDS (Fixed):
+status                    UInt8             1                  
+error_count               UInt32            4                  
+
+NETWORK METRICS (Fixed):
+packets_sent              UInt64            8                  
+packets_received          UInt64            8                  
+bytes_sent                UInt64            8                  
+bytes_received            UInt64            8                  
+
+SUBTOTALS:
+  String fields (4):      40-59 bytes (avg: ~50 bytes)
+  Location (3):           20 bytes
+  Timestamp (1):          8 bytes
+  Numeric fields (18):    79 bytes
+  
+TOTAL PER SENSOR RECORD:  157 bytes (estimated, binary format)
+
+
+--------------------------------------------------------------------------------
+SERIALIZATION FORMAT COMPARISON - SENSOR RECORD:
+--------------------------------------------------------------------------------
+
+1. BINARY (Protocol Buffers/Avro/Kryo):
+   - Field data:            157 bytes
+   - Field IDs/tags:        ~25 bytes
+   - Length prefixes:       ~15 bytes
+   TOTAL:                   ~197 bytes per record
+
+2. JSON (Compact, no whitespace):
+   - Field names:           ~380 bytes (26 field names with quotes/colons)
+   - Field values:          ~200 bytes
+   - Braces/commas:         ~30 bytes
+   TOTAL:                   ~610 bytes per record
+
+3. JSON (Pretty printed):
+   - Add indentation/newlines: +130 bytes
+   TOTAL:                   ~740 bytes per record
+
+4. TSV (Tab-Separated Values):
+   - No field names:        157 bytes (just values)
+   - Delimiters:           25 bytes (tabs)
+   TOTAL:                   ~182 bytes per record
+
+
+RECOMMENDED: Protocol Buffers or Avro (~197 bytes per sensor record)
+
+
+================================================================================
+3. AGGREGATE NETWORK BANDWIDTH CALCULATIONS
+================================================================================
+
+SCENARIO 1: Low-Rate Writer (Flink Benchmark Setup)
+----------------------------------------------------
+Write Rate:               25 records/sec total
+  - CPU records:          12.5 records/sec
+  - Sensor records:       12.5 records/sec
+
+Using Binary Format (Protobuf/Avro):
+  CPU bandwidth:          12.5 rec/s × 256 bytes = 3,200 bytes/sec = 3.2 KB/s
+  Sensor bandwidth:       12.5 rec/s × 197 bytes = 2,462 bytes/sec = 2.4 KB/s
+  TOTAL:                  5.6 KB/s = 336 KB/min = 19.7 MB/hour
+
+Using JSON Format:
+  CPU bandwidth:          12.5 rec/s × 685 bytes = 8,562 bytes/sec = 8.4 KB/s
+  Sensor bandwidth:       12.5 rec/s × 610 bytes = 7,625 bytes/sec = 7.4 KB/s
+  TOTAL:                  15.8 KB/s = 948 KB/min = 55.5 MB/hour
+
+
+SCENARIO 2: Production Rate (From latest-0 analysis)
+-----------------------------------------------------
+Write Rate:               1,556 records/sec total (after Flink aggregation)
+  - CPU records:          778 records/sec
+  - Sensor records:       778 records/sec
+
+Using Binary Format (Protobuf/Avro):
+  CPU bandwidth:          778 rec/s × 256 bytes = 199,168 bytes/sec = 194.5 KB/s
+  Sensor bandwidth:       778 rec/s × 197 bytes = 153,266 bytes/sec = 149.7 KB/s
+  TOTAL:                  344.2 KB/s = 20.1 MB/min = 1.2 GB/hour
+
+Using JSON Format:
+  CPU bandwidth:          778 rec/s × 685 bytes = 532,930 bytes/sec = 520.4 KB/s
+  Sensor bandwidth:       778 rec/s × 610 bytes = 474,580 bytes/sec = 463.5 KB/s
+  TOTAL:                  983.9 KB/s = 57.5 MB/min = 3.4 GB/hour
+
+
+SCENARIO 3: Raw IoT Data (Before Flink Aggregation)
+----------------------------------------------------
+Assuming 166,667 devices with mixed granularity:
+  - 16,667 devices @ 1-min intervals  = 277.8 records/sec
+  - 150,000 devices @ 5-min intervals = 500 records/sec
+  TOTAL RAW:                            777.8 records/sec per table
+
+Using Binary Format:
+  CPU bandwidth:          778 rec/s × 256 bytes = 194.5 KB/s
+  Sensor bandwidth:       778 rec/s × 197 bytes = 149.7 KB/s
+  TOTAL RAW INGESTION:    344.2 KB/s = 1.2 GB/hour
+
+Using JSON Format:
+  CPU bandwidth:          778 rec/s × 685 bytes = 520.4 KB/s
+  Sensor bandwidth:       778 rec/s × 610 bytes = 463.5 KB/s
+  TOTAL RAW INGESTION:    983.9 KB/s = 3.4 GB/hour
+
+
+================================================================================
+4. JAVA IMPLEMENTATION CONSIDERATIONS
+================================================================================
+
+RECOMMENDED SERIALIZATION LIBRARIES:
+------------------------------------
+
+1. Protocol Buffers (Protobuf)
+   - Size overhead:       ~25-30% over raw data
+   - Speed:               Very fast (native code)
+   - CPU record:          ~256 bytes
+   - Sensor record:       ~197 bytes
+   - Maven: com.google.protobuf:protobuf-java
+
+2. Apache Avro
+   - Size overhead:       ~20-25% over raw data
+   - Speed:               Fast (JVM optimized)
+   - CPU record:          ~250 bytes
+   - Sensor record:       ~190 bytes
+   - Maven: org.apache.avro:avro
+
+3. Kryo (with compression)
+   - Size overhead:       ~15-20% over raw data
+   - Speed:               Very fast (JVM optimized)
+   - CPU record:          ~240 bytes
+   - Sensor record:       ~180 bytes
+   - Maven: com.esotericsoftware:kryo
+
+4. JSON (Jackson/Gson)
+   - Size overhead:       ~250-300% over raw data
+   - Speed:               Moderate
+   - CPU record:          ~685 bytes
+   - Sensor record:       ~610 bytes
+   - Maven: com.fasterxml.jackson.core:jackson-databind
+
+
+COMPRESSION IMPACT:
+-------------------
+With Snappy compression (recommended for streaming):
+  - Binary formats:      15-25% additional size reduction
+  - JSON:                40-60% size reduction
+
+Example with Protobuf + Snappy:
+  CPU record:            256 bytes → ~205 bytes (20% reduction)
+  Sensor record:         197 bytes → ~160 bytes (19% reduction)
+
+Example with JSON + Snappy:
+  CPU record:            685 bytes → ~300 bytes (56% reduction)
+  Sensor record:         610 bytes → ~270 bytes (56% reduction)
+
+
+================================================================================
+5. NETWORK TRANSMISSION OVERHEAD
+================================================================================
+
+TCP/IP OVERHEAD (per packet):
+------------------------------
+  IP Header:             20 bytes
+  TCP Header:            20 bytes
+  Ethernet Frame:        14 bytes + 4 bytes (CRC)
+  TOTAL:                 58 bytes per packet
+
+HTTP/REST OVERHEAD (if using HTTP):
+------------------------------------
+  HTTP Headers:          ~200-500 bytes per request
+  TLS/SSL overhead:      ~50-100 bytes per record
+
+BATCHING EFFICIENCY:
+--------------------
+Sending individual records wastes bandwidth due to overhead.
+
+Example - Individual vs Batched (100 records):
+
+1. Individual JSON records over HTTP:
+   - Per record:         610 bytes (data) + 300 bytes (headers) = 910 bytes
+   - 100 records:        91,000 bytes = 91 KB
+
+2. Batched JSON (100 records in one request):
+   - Records:            61,000 bytes
+   - HTTP headers:       300 bytes (once)
+   - Array overhead:     200 bytes
+   - TOTAL:              61,500 bytes = 61.5 KB
+   - SAVINGS:            32% bandwidth reduction
+
+3. Batched Protobuf (100 records):
+   - Records:            19,700 bytes
+   - HTTP headers:       300 bytes
+   - Length prefixes:    100 bytes
+   - TOTAL:              20,100 bytes = 20.1 KB
+   - SAVINGS:            78% vs individual JSON
+
+
+RECOMMENDATION FOR JAVA FLINK PIPELINE:
+----------------------------------------
+1. Use Apache Avro (native Flink support) or Protobuf
+2. Batch records: 50-100 records per transmission
+3. Use Snappy compression for network transport
+4. Use TCP streaming (not HTTP REST) for production
+
+Expected bandwidth with optimized setup:
+  - Binary + batching + compression: ~250 KB/s @ 1,556 rec/s
+  - Daily data volume:               ~21 GB/day
+  - Monthly data volume:             ~630 GB/month
+
+
+================================================================================
+6. COST IMPLICATIONS (AWS Data Transfer)
+================================================================================
+
+AWS DATA TRANSFER PRICING (us-east-1, 2025):
+---------------------------------------------
+  Within same AZ:        Free
+  Cross-AZ (same region): $0.01 per GB
+  Cross-region:          $0.02 per GB
+  Internet egress:       $0.09 per GB
+
+COST SCENARIOS (Production Rate: 1,556 rec/s):
+-----------------------------------------------
+
+Using Binary Format (1.2 GB/hour = 28.8 GB/day):
+
+1. Single AZ deployment (recommended):
+   - Data transfer:      FREE
+   - Monthly cost:       $0
+
+2. Cross-AZ replication (3 replicas):
+   - Data transfer:      86.4 GB/day × $0.01 = $0.86/day
+   - Monthly cost:       ~$26/month
+
+3. Cross-region backup:
+   - Data transfer:      28.8 GB/day × $0.02 = $0.58/day
+   - Monthly cost:       ~$17/month
+
+Using JSON Format (3.4 GB/hour = 81.6 GB/day):
+
+1. Cross-AZ replication (3 replicas):
+   - Data transfer:      244.8 GB/day × $0.01 = $2.45/day
+   - Monthly cost:       ~$74/month
+
+2. Cross-region backup:
+   - Data transfer:      81.6 GB/day × $0.02 = $1.63/day
+   - Monthly cost:       ~$49/month
+
+
+COST SAVINGS WITH BINARY FORMAT:
+---------------------------------
+Cross-AZ: $74 - $26 = $48/month saved (65% reduction)
+Cross-region: $49 - $17 = $32/month saved (65% reduction)
+
+
+================================================================================
+7. SUMMARY AND RECOMMENDATIONS
+================================================================================
+
+PAYLOAD SIZES (per record):
+----------------------------
+                          Binary      JSON        Reduction
+CPU Record:               256 bytes   685 bytes   62% smaller
+Sensor Record:            197 bytes   610 bytes   68% smaller
+
+BANDWIDTH (@ 1,556 rec/s):
+---------------------------
+                          Binary      JSON        Reduction
+Total:                    344 KB/s    984 KB/s    65% smaller
+Hourly:                   1.2 GB      3.4 GB      65% smaller
+Daily:                    28.8 GB     81.6 GB     65% smaller
+
+RECOMMENDATIONS FOR JAVA IMPLEMENTATION:
+-----------------------------------------
+1. ✅ Use Apache Avro or Protocol Buffers for serialization
+2. ✅ Batch 50-100 records per network transmission
+3. ✅ Enable Snappy compression in Flink/Pulsar
+4. ✅ Deploy in single AZ when possible (free data transfer)
+5. ✅ Use binary protocols (not JSON) for production
+6. ✅ Monitor actual bandwidth with metrics
+
+EXPECTED PRODUCTION METRICS:
+-----------------------------
+With binary format + batching + compression:
+  - Network bandwidth:   ~250 KB/s
+  - Daily volume:        ~21 GB/day
+  - Monthly volume:      ~630 GB/month
+  - Data transfer cost:  $0-26/month (depending on topology)
+
+================================================================================
+END OF ANALYSIS
+================================================================================
+

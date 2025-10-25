@@ -1,0 +1,32 @@
+# AWS Configuration
+aws_region  = "us-west-2"
+environment = "development"
+
+# Cluster Configuration
+cluster_name       = "flink-benchmark-low"
+kubernetes_version = "1.28"
+
+# VPC Configuration - Using different CIDR to avoid conflicts
+vpc_cidr             = "10.1.0.0/16"
+private_subnet_cidrs = ["10.1.1.0/24", "10.1.2.0/24"]
+public_subnet_cidrs  = ["10.1.101.0/24", "10.1.102.0/24"]
+
+# Cost Optimization - Use Spot Instances
+use_spot_instances = true  # 50-90% cost savings
+
+# Flink Configuration
+flink_namespace         = "flink-benchmark"
+install_flink_operator  = true
+flink_operator_version  = "1.7.0"
+
+# Monitoring
+enable_metrics_server = true
+
+# Additional Tags (Optional)
+additional_tags = {
+  Team       = "data-engineering"
+  Project    = "iot-pipeline"
+  CostCenter = "development"
+  InfraType  = "low-cost"
+}
+

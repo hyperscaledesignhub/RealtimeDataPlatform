@@ -1,0 +1,233 @@
+# Custom values for Pulsar deployment on EKS with local NVMe SSDs
+
+# Global settings
+namespace: pulsar
+initialize: true
+
+# Persistence settings
+persistence: true
+volumes:
+  persistence: true
+  local_storage: false  # We'll use custom StorageClass
+
+# Anti-affinity to spread pods across nodes
+affinity:
+  anti_affinity: true
+  type: preferredDuringSchedulingIgnoredDuringExecution
+
+# Component configuration
+components:
+  zookeeper: true
+  bookkeeper: true
+  broker: true
+  proxy: true
+  autorecovery: true
+  functions: false
+  toolset: true
+  pulsar_manager: false
+
+# ZooKeeper Configuration
+zookeeper:
+  replicaCount: 3
+  
+  # Node selector to place on dedicated nodes
+  nodeSelector:
+    component: zookeeper
+    pulsar-role: zookeeper
+    node-type: zookeeper
+  
+  # Tolerations for node taints
+  tolerations:
+  - key: "pulsar"
+    value: "zookeeper"
+    effect: "NoSchedule"
+  
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1"
+  
+  volumes:
+    persistence: true
+    data:
+      name: data
+      size: 20Gi
+      storageClassName: "gp3"  # Use AWS gp3 for ZooKeeper
+
+# BookKeeper Configuration
+bookkeeper:
+  replicaCount: 4
+  
+  # Node selector to place on BookKeeper nodes
+  nodeSelector:
+    component: bookie
+    pulsar-role: bookie
+    node-type: bookkeeper
+  
+  # Tolerations for node taints
+  tolerations:
+  - key: "pulsar"
+    value: "bookkeeper"
+    effect: "NoSchedule"
+  
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1"
+    limits:
+      memory: "4Gi"
+      cpu: "2"
+  
+  # Volume configuration for NVMe SSDs
+  volumes:
+    persistence: true
+    useSingleCommonVolume: false
+    
+    # Journal on EBS gp3
+    journal:
+      name: journal
+      size: 100Gi
+      storageClassName: "gp3"
+      local_storage: false
+    
+    # Ledgers on EBS gp3
+    ledgers:
+      name: ledgers
+      size: 300Gi
+      storageClassName: "gp3"
+      local_storage: false
+  
+  # BookKeeper configuration
+  configData:
+    # Increase journal write buffer
+    journalMaxSizeMB: "2048"
+    journalMaxBackups: "5"
+    
+    # Optimize for SSDs
+    journalSyncData: "false"
+    journalAdaptiveGroupWrites: "true"
+    journalFlushWhenQueueEmpty: "true"
+    
+    # Entry log settings
+    entryLogSizeLimit: "2147483648"  # 2GB
+    entryLogFilePreAllocationEnabled: "true"
+    
+    # Flush settings optimized for SSDs
+    flushInterval: "60000"
+    
+    # GC settings
+    minorCompactionInterval: "3600"
+    majorCompactionInterval: "86400"
+    isForceGCAllowWhenNoSpace: "true"
+    gcWaitTime: "900000"
+    
+    # Use RocksDB for better performance
+    ledgerStorageClass: "org.apache.bookkeeper.bookie.storage.ldb.DbLedgerStorage"
+    
+    # Stats
+    statsProviderClass: "org.apache.bookkeeper.stats.prometheus.PrometheusMetricsProvider"
+
+
+# Broker Configuration
+broker:
+  replicaCount: 3
+  
+  # Node selector
+  nodeSelector:
+    component: broker
+    pulsar-role: broker
+    node-type: broker
+  
+  # Tolerations for node taints
+  tolerations:
+  - key: "pulsar"
+    value: "broker"
+    effect: "NoSchedule"
+  
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1"
+    limits:
+      memory: "4Gi"
+      cpu: "2"
+  
+  configData:
+    # Broker configuration
+    brokerDeleteInactiveTopicsEnabled: "false"
+    loadBalancerEnabled: "true"
+    
+    # Message retention (1 day by default)
+    defaultRetentionTimeInMinutes: "1440"
+    defaultRetentionSizeInMB: "10240"
+    
+    # Increase limits
+    maxConcurrentLookupRequest: "50000"
+    maxConcurrentTopicLoadRequest: "50000"
+    
+    # Performance tuning
+    managedLedgerCacheSizeMB: "512"
+    managedLedgerDefaultEnsembleSize: "3"
+    managedLedgerDefaultWriteQuorum: "2"
+    managedLedgerDefaultAckQuorum: "2"
+    
+    # Stats
+    exposeTopicLevelMetricsInPrometheus: "true"
+    exposeConsumerLevelMetricsInPrometheus: "false"
+
+# Proxy Configuration
+proxy:
+  replicaCount: 2
+  
+  # Node selector
+  nodeSelector:
+    component: proxy
+    pulsar-role: proxy
+    node-type: proxy
+  
+  # Tolerations for node taints (proxy nodes don't have taints, but adding for consistency)
+  tolerations: []
+  
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1"
+  
+  service:
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+
+# Monitoring
+monitoring:
+  prometheus: true
+  grafana: true
+  
+  prometheus:
+    enabled: false  # We'll use Victoria Metrics from the helm chart
+    
+  grafana:
+    enabled: true
+    adminPassword: "admin123"  # Change this!
+    service:
+      type: LoadBalancer
+
+# Victoria Metrics for monitoring (as configured in the helm chart)
+victoria-metrics-k8s-stack:
+  enabled: true
+  vmagent:
+    enabled: true
+  grafana:
+    enabled: true
+    adminPassword: "admin123"  # Change this!
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClassName: "gp3"

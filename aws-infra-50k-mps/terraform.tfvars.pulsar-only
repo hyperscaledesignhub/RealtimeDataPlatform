@@ -1,0 +1,29 @@
+# ================================================================================
+# PULSAR ONLY DEPLOYMENT - SINGLE AZ OPTIMIZED
+# ================================================================================
+# This configuration deploys only Pulsar infrastructure
+# All worker nodes run in single AZ (us-west-2a) for cost savings
+# Estimated Cost: ~$150-200/month (on-demand, single AZ), ~$75-100/month (spot, single AZ)
+
+# Enable only Pulsar
+enable_flink = false
+enable_pulsar = true
+enable_clickhouse = false
+enable_general_nodes = true  # Required for operators
+
+# Disable Flink operator (not needed for Pulsar-only deployment)
+install_flink_operator = false
+
+# Cost optimization
+use_spot_instances = false
+
+# Pulsar configuration (full cluster for production testing)
+pulsar_zookeeper_desired_size = 3  # 3 ZooKeepers for quorum
+pulsar_broker_desired_size = 3     # 3 Brokers for load distribution
+pulsar_bookkeeper_desired_size = 4 # 4 BookKeepers for data replication
+pulsar_proxy_desired_size = 2      # 2 Proxies for client connections
+
+# Cluster configuration
+cluster_name = "bench-low-infra"
+aws_region = "us-west-2"
+environment = "development"
