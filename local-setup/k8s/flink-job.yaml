@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: flink-job-submit
+  namespace: iot-pipeline
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-flink
+          image: busybox:latest
+          command: ['sh', '-c']
+          args:
+            - |
+              until nc -z flink-jobmanager 8081; do
+                echo "Waiting for Flink JobManager..."
+                sleep 5
+              done
+              echo "Flink JobManager is ready!"
+      containers:
+        - name: job-submitter
+          image: flink:1.18.0
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              echo "Waiting for services to be ready..."
+              sleep 30
+              echo "Submitting Flink job..."
+              flink run \
+                --jobmanager flink-jobmanager:8081 \
+                --class com.iot.pipeline.flink.JDBCFlinkConsumer \
+                /opt/flink/jars/flink-consumer-1.0.0.jar
+          env:
+            - name: PULSAR_URL
+              value: "pulsar://pulsar:6650"
+            - name: PULSAR_TOPIC
+              value: "persistent://public/default/iot-sensor-data"
+            - name: CLICKHOUSE_URL
+              value: "jdbc:clickhouse://clickhouse:8123/iot"
+          volumeMounts:
+            - name: flink-job-jar
+              mountPath: /opt/flink/jars
+      volumes:
+        - name: flink-job-jar
+          hostPath:
+            path: /tmp/flink-jars  # Will mount from host
