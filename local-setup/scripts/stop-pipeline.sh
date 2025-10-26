@@ -33,6 +33,12 @@ docker stop pulsar-standalone 2>/dev/null && docker rm pulsar-standalone 2>/dev/
 echo "  → Stopping ClickHouse..."
 docker stop clickhouse 2>/dev/null && docker rm clickhouse 2>/dev/null || true
 
+echo "  → Stopping Grafana..."
+docker stop grafana 2>/dev/null && docker rm grafana 2>/dev/null || true
+
+echo "  → Stopping Prometheus..."
+docker stop prometheus 2>/dev/null && docker rm prometheus 2>/dev/null || true
+
 echo ""
 echo "🧹 Cleaning Up Resources..."
 echo "  → Removing Docker network..."
