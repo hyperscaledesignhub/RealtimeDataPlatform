@@ -18,7 +18,7 @@ A comprehensive event streaming platform designed for high-throughput, real-time
   - **ClickHouse Load**: Columnar database for analytical queries
   - **Producer Load**: High-throughput event data generation
 - **Infrastructure**: AWS EKS, dedicated node groups, NVMe storage
-- **Cost**: ~$1,500-2,000/month
+- **Cost**: $24,592/month
 - **Documentation**: [Complete 1M MPS Documentation](realtime-platform-1million-events/README.md)
 
 #### `realtime-platform-50k-events/` - Cost-Optimized Production Setup
@@ -103,7 +103,7 @@ cd local-setup
 |-------|------------|------------|----------|
 | Local | ~1K msg/sec | Free | Development |
 | 50K MPS | 50,000 msg/sec | $200-250 | Small-Medium Business |
-| 1M MPS | 1,000,000 msg/sec | $1,500-2,000 | Enterprise |
+| 1M MPS | 1,000,000 msg/sec | $24,592 | Enterprise |
 
 ## 🎯 Supported Domains
 
