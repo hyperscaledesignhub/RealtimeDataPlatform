@@ -1,0 +1,36 @@
+# Grafana Datasource Configuration for Kubernetes/AWS
+# ==================================
+apiVersion: 1
+
+datasources:
+  # Victoria Metrics (Prometheus-compatible) datasource for Flink metrics
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    uid: prometheus
+    url: http://vmsingle-pulsar-victoria-metrics-k8s-stack.pulsar.svc.cluster.local:8429
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: "5s"
+      queryTimeout: "300s"
+      httpMethod: "POST"
+
+  # ClickHouse datasource for IoT data
+  - name: ClickHouse
+    type: grafana-clickhouse-datasource
+    access: proxy
+    uid: clickhouse
+    url: http://clickhouse-iot-cluster-repl.clickhouse.svc.cluster.local:8123
+    database: benchmark
+    isDefault: false
+    editable: true
+    jsonData:
+      defaultDatabase: benchmark
+      port: 8123
+      server: clickhouse-iot-cluster-repl.clickhouse.svc.cluster.local
+      protocol: http
+      username: default
+    secureJsonData:
+      password: ''
+
