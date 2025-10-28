@@ -46,9 +46,9 @@ public class FlinkIoTProcessor {
                 "Pulsar IoT Source"
         );
         
-        // Filter only active sensors
+        // Filter only active sensors (status = 1)
         DataStream<SensorData> activeSensors = sensorDataStream
-                .filter(data -> data != null && "active".equals(data.getStatus()));
+                .filter(data -> data != null && data.isActive());
         
         // Create alerts stream
         DataStream<SensorAlert> alertStream = activeSensors
@@ -84,9 +84,9 @@ public class FlinkIoTProcessor {
             
             @Override
             protected void setParameters(PreparedStatement stmt, SensorAlert alert) throws Exception {
-                stmt.setString(1, alert.getSensorId());
-                stmt.setString(2, alert.getSensorType());
-                stmt.setString(3, alert.getLocation());
+                stmt.setInt(1, alert.getSensorId());
+                stmt.setInt(2, alert.getSensorType());
+                stmt.setInt(3, alert.getLocation());
                 stmt.setDouble(4, alert.getTemperature());
                 stmt.setDouble(5, alert.getHumidity());
                 stmt.setDouble(6, alert.getBatteryLevel());
@@ -99,35 +99,20 @@ public class FlinkIoTProcessor {
         activeSensors.addSink(new ClickHouseSink<SensorData>(clickhouseUrl, "sensor_raw_data") {
             @Override
             protected String getInsertSQL() {
-                return "INSERT INTO sensor_raw_data (sensor_id, sensor_type, location, temperature, humidity, pressure, battery_level, status, timestamp, manufacturer, model, firmware_version, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                return "INSERT INTO sensor_raw_data (sensor_id, sensor_type, location, temperature, humidity, pressure, battery_level, status, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
             }
             
             @Override
             protected void setParameters(PreparedStatement stmt, SensorData data) throws Exception {
-                stmt.setString(1, data.getSensorId());
-                stmt.setString(2, data.getSensorType());
-                stmt.setString(3, data.getLocation());
+                stmt.setInt(1, data.getSensorId());
+                stmt.setInt(2, data.getSensorType());
+                stmt.setInt(3, data.getLocation());
                 stmt.setDouble(4, data.getTemperature());
                 stmt.setDouble(5, data.getHumidity());
                 stmt.setDouble(6, data.getPressure());
                 stmt.setDouble(7, data.getBatteryLevel());
-                stmt.setString(8, data.getStatus());
+                stmt.setInt(8, data.getStatus());
                 stmt.setTimestamp(9, new java.sql.Timestamp(data.getTimestamp().toEpochMilli()));
-                
-                SensorData.MetaData meta = data.getMetadata();
-                if (meta != null) {
-                    stmt.setString(10, meta.getManufacturer());
-                    stmt.setString(11, meta.getModel());
-                    stmt.setString(12, meta.getFirmwareVersion());
-                    stmt.setDouble(13, meta.getLatitude());
-                    stmt.setDouble(14, meta.getLongitude());
-                } else {
-                    stmt.setString(10, "");
-                    stmt.setString(11, "");
-                    stmt.setString(12, "");
-                    stmt.setDouble(13, 0.0);
-                    stmt.setDouble(14, 0.0);
-                }
             }
         });
         
@@ -239,9 +224,9 @@ public class FlinkIoTProcessor {
     }
     
     public static class SensorAlert {
-        private String sensorId;
-        private String sensorType;
-        private String location;
+        private int sensorId;
+        private int sensorType;
+        private int location;
         private double temperature;
         private double humidity;
         private double batteryLevel;
@@ -250,7 +235,7 @@ public class FlinkIoTProcessor {
         
         public SensorAlert() {}
         
-        public SensorAlert(String sensorId, String sensorType, String location,
+        public SensorAlert(int sensorId, int sensorType, int location,
                           double temperature, double humidity, double batteryLevel,
                           String alertType, long alertTime) {
             this.sensorId = sensorId;
@@ -264,9 +249,9 @@ public class FlinkIoTProcessor {
         }
         
         // Getters
-        public String getSensorId() { return sensorId; }
-        public String getSensorType() { return sensorType; }
-        public String getLocation() { return location; }
+        public int getSensorId() { return sensorId; }
+        public int getSensorType() { return sensorType; }
+        public int getLocation() { return location; }
         public double getTemperature() { return temperature; }
         public double getHumidity() { return humidity; }
         public double getBatteryLevel() { return batteryLevel; }
@@ -274,9 +259,9 @@ public class FlinkIoTProcessor {
         public long getAlertTime() { return alertTime; }
         
         // Setters
-        public void setSensorId(String sensorId) { this.sensorId = sensorId; }
-        public void setSensorType(String sensorType) { this.sensorType = sensorType; }
-        public void setLocation(String location) { this.location = location; }
+        public void setSensorId(int sensorId) { this.sensorId = sensorId; }
+        public void setSensorType(int sensorType) { this.sensorType = sensorType; }
+        public void setLocation(int location) { this.location = location; }
         public void setTemperature(double temperature) { this.temperature = temperature; }
         public void setHumidity(double humidity) { this.humidity = humidity; }
         public void setBatteryLevel(double batteryLevel) { this.batteryLevel = batteryLevel; }

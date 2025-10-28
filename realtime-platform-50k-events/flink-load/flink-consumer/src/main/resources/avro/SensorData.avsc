@@ -1,0 +1,49 @@
+{
+  "type": "record",
+  "name": "SensorData",
+  "namespace": "org.apache.pulsar.testclient.avro",
+  "doc": "IoT Sensor Data for Pulsar Performance Testing - Optimized Integer Schema",
+  "fields": [
+    {
+      "name": "sensorId",
+      "type": "int",
+      "doc": "Unique sensor identifier (integer for efficiency)"
+    },
+    {
+      "name": "sensorType",
+      "type": "int",
+      "doc": "Type of sensor (1=temperature, 2=humidity, 3=pressure, 4=motion, 5=light, 6=co2, 7=noise, 8=multisensor)"
+    },
+    {
+      "name": "temperature",
+      "type": "double",
+      "doc": "Temperature reading in Celsius"
+    },
+    {
+      "name": "humidity",
+      "type": "double",
+      "doc": "Humidity reading as percentage"
+    },
+    {
+      "name": "pressure",
+      "type": "double",
+      "doc": "Pressure reading in hPa"
+    },
+    {
+      "name": "batteryLevel",
+      "type": "double",
+      "doc": "Battery level as percentage"
+    },
+    {
+      "name": "status",
+      "type": "int",
+      "doc": "Sensor status (1=online, 2=offline, 3=maintenance, 4=error)"
+    },
+    {
+      "name": "timestamp",
+      "type": "long",
+      "logicalType": "timestamp-millis",
+      "doc": "Timestamp in milliseconds since epoch"
+    }
+  ]
+}

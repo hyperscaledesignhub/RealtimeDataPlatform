@@ -18,6 +18,10 @@ RUN apt-get update && apt-get install -y wget && \
 # Copy custom IoTPerformanceProducer.java
 COPY IoTPerformanceProducer.java /build/pulsar-src/pulsar-testclient/src/main/java/org/apache/pulsar/testclient/
 
+# Copy AVRO schema files to resources directory
+RUN mkdir -p /build/pulsar-src/pulsar-testclient/src/main/resources/avro
+COPY src/main/resources/avro/*.avsc /build/pulsar-src/pulsar-testclient/src/main/resources/avro/
+
 # Build only the pulsar-testclient module (much faster than building entire Pulsar)
 WORKDIR /build/pulsar-src
 RUN mvn clean install -pl pulsar-testclient -am -DskipTests -Dspotbugs.skip=true -Drat.skip=true -Dlicense.skip=true -Dcheckstyle.skip=true && \

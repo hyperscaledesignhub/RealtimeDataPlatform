@@ -67,7 +67,7 @@ else
     echo "📦 Deploying ZooKeeper (3 replicas)..."
     
     # Deploy ZooKeeper using the deploy-zookeeper-all.yaml
-    ZOOKEEPER_YAML="../../../clickhouse-benchmark/clickhouse_updated_k8script/deploy-zookeeper-all.yaml"
+    ZOOKEEPER_YAML="./deploy-zookeeper-all.yaml"
     
     if [ ! -f "$ZOOKEEPER_YAML" ]; then
         echo "❌ ZooKeeper deployment file not found at: $ZOOKEEPER_YAML"
@@ -115,7 +115,7 @@ else
     echo "📦 Deploying ClickHouse cluster (3 shards × 2 replicas)..."
     
     # Deploy ClickHouse using the deploy-clickhouse-all.yaml
-    CLICKHOUSE_YAML="../../../clickhouse-benchmark/clickhouse_updated_k8script/deploy-clickhouse-all.yaml"
+    CLICKHOUSE_YAML="./deploy-clickhouse-all.yaml"
     
     if [ ! -f "$CLICKHOUSE_YAML" ]; then
         echo "❌ ClickHouse deployment file not found at: $CLICKHOUSE_YAML"

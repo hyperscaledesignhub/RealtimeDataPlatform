@@ -1,0 +1,29 @@
+{
+  "type": "record",
+  "name": "SensorDataMinimal",
+  "namespace": "org.apache.pulsar.testclient.avro",
+  "doc": "Minimal IoT Sensor Data - Target 300 bytes",
+  "fields": [
+    {
+      "name": "sensorId",
+      "type": "string",
+      "doc": "Sensor ID (max 20 chars)"
+    },
+    {
+      "name": "value",
+      "type": "double",
+      "doc": "Single sensor reading"
+    },
+    {
+      "name": "timestamp",
+      "type": "long",
+      "logicalType": "timestamp-millis",
+      "doc": "Timestamp in milliseconds"
+    },
+    {
+      "name": "type",
+      "type": "string",
+      "doc": "Sensor type (max 10 chars)"
+    }
+  ]
+}

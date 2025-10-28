@@ -2,8 +2,11 @@ package com.iot.pipeline.flink;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericRecord;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.AggregateFunction;
+import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
@@ -20,6 +23,8 @@ import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingProcessingTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -32,10 +37,57 @@ import java.util.concurrent.TimeUnit;
 public class JDBCFlinkConsumer {
     private static final ObjectMapper mapper = new ObjectMapper();
     
+    /**
+     * AVRO Deserialization Schema for SensorData - converts to SensorRecord directly
+     */
+    public static class AvroSensorDataDeserializationSchema implements DeserializationSchema<SensorRecord> {
+        private transient Schema avroSchema;
+        private transient org.apache.avro.io.DatumReader<GenericRecord> datumReader;
+        
+        @Override
+        public void open(InitializationContext context) throws Exception {
+            // Load AVRO schema from resources (now included in JAR)
+            try (InputStream schemaStream = getClass().getResourceAsStream("/avro/SensorData.avsc")) {
+                if (schemaStream == null) {
+                    throw new RuntimeException("AVRO schema file not found: /avro/SensorData.avsc");
+                }
+                avroSchema = new Schema.Parser().parse(schemaStream);
+                datumReader = new org.apache.avro.generic.GenericDatumReader<>(avroSchema);
+                System.out.println("✅ Loaded AVRO schema from JAR: " + avroSchema.getName());
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to load AVRO schema", e);
+            }
+        }
+        
+        @Override
+        public SensorRecord deserialize(byte[] message) throws IOException {
+            try {
+                // Deserialize AVRO binary message
+                org.apache.avro.io.Decoder decoder = org.apache.avro.io.DecoderFactory.get().binaryDecoder(message, null);
+                GenericRecord avroRecord = datumReader.read(null, decoder);
+                
+                // Convert directly to SensorRecord to avoid Kryo serialization issues
+                return new SensorRecord(avroRecord);
+            } catch (Exception e) {
+                throw new IOException("Failed to deserialize AVRO message", e);
+            }
+        }
+        
+        @Override
+        public boolean isEndOfStream(SensorRecord nextElement) {
+            return false;
+        }
+        
+        @Override
+        public TypeInformation<SensorRecord> getProducedType() {
+            return TypeInformation.of(SensorRecord.class);
+        }
+    }
+    
     public static void main(String[] args) throws Exception {
         String pulsarUrl = System.getenv().getOrDefault("PULSAR_URL", "pulsar://localhost:6650");
         String pulsarAdminUrl = System.getenv().getOrDefault("PULSAR_ADMIN_URL", "http://localhost:8080");
-        String topicName = System.getenv().getOrDefault("PULSAR_TOPIC", "persistent://public/default/iot-sensor-data");
+        String baseTopicName = System.getenv().getOrDefault("PULSAR_TOPIC", "persistent://public/default/iot-sensor-data");
         String clickhouseUrl = System.getenv().getOrDefault("CLICKHOUSE_URL", "jdbc:clickhouse://localhost:8123/benchmark");
         
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -46,48 +98,33 @@ public class JDBCFlinkConsumer {
         // The config includes: interval, mode (EXACTLY_ONCE), state backend (RocksDB), etc.
         // This code is checkpoint-aware and will participate in checkpointing automatically
         
-        System.out.println("Starting JDBC Flink IoT Consumer with 1-Minute Aggregation...");
+        System.out.println("Starting JDBC Flink IoT Consumer with AVRO Support and 1-Minute Aggregation...");
         System.out.println("Pulsar URL: " + pulsarUrl);
         System.out.println("Pulsar Admin URL: " + pulsarAdminUrl);
-        System.out.println("Topic: " + topicName);
+        System.out.println("Consuming Topic: " + baseTopicName + " (all partitions)");
         System.out.println("ClickHouse URL: " + clickhouseUrl);
+        System.out.println("Schema Type: AVRO");
         System.out.println("Checkpointing: Enabled via FlinkDeployment config");
-        System.out.println("Aggregation: 1-minute tumbling windows per device_id");
+        System.out.println("Aggregation: 1-minute tumbling windows per device_id with keyBy()");
         System.out.println("Expected reduction: 30K msgs/sec → ~500-1000 aggregated records/min");
-        System.out.println("Using: Official Flink Pulsar Connector (auto-parallelization enabled)");
+        System.out.println("Using: Official Flink Pulsar Connector with AVRO deserialization");
         
-        // Create Pulsar source using official Flink connector
-        PulsarSource<String> source = PulsarSource.builder()
-                .setServiceUrl(pulsarUrl)
-                .setAdminUrl(pulsarAdminUrl)
-                .setTopics(topicName)
-                .setSubscriptionName("flink-jdbc-consumer")
-                .setDeserializationSchema(new SimpleStringSchema())
-                .setStartCursor(StartCursor.earliest())
-                .build();
-        
-        DataStream<String> pulsarStream = env.fromSource(
-                source,
-                WatermarkStrategy.noWatermarks(),
-                "Pulsar IoT Source"
-        );
-        
-        // Process with 1-minute aggregation windows
-        DataStream<SensorRecord> sensorStream = pulsarStream
-                .map(jsonStr -> {
-                    try {
-                        JsonNode json = mapper.readTree(jsonStr);
-                        String deviceId = json.has("sensorId") ? json.get("sensorId").asText() : 
-                                         json.has("device_id") ? json.get("device_id").asText() : "unknown";
-                        return new SensorRecord(json);
-                    } catch (Exception e) {
-                        System.err.println("Error parsing JSON: " + e.getClass().getName() + " - " + e.getMessage());
-                        System.err.println("JSON string: " + (jsonStr != null ? jsonStr.substring(0, Math.min(200, jsonStr.length())) : "null"));
-                        e.printStackTrace();
-                        return null;
-                    }
-                })
-                .filter(data -> data != null);
+               // Create Pulsar source using official Flink connector with AVRO deserialization
+               // The connector will automatically discover and consume from all partitions of the topic.
+               PulsarSource<SensorRecord> source = PulsarSource.builder()
+                       .setServiceUrl(pulsarUrl)
+                       .setAdminUrl(pulsarAdminUrl)
+                       .setTopics(baseTopicName) // Changed from topicName to baseTopicName
+                       .setSubscriptionName("flink-jdbc-consumer-avro")
+                       .setDeserializationSchema(new AvroSensorDataDeserializationSchema())
+                       .setStartCursor(StartCursor.earliest())
+                       .build();
+
+               DataStream<SensorRecord> sensorStream = env.fromSource(
+                       source,
+                       WatermarkStrategy.noWatermarks(),
+                       "Pulsar AVRO IoT Source"
+               );
         
         // Aggregate by device_id over 1-minute windows
         sensorStream
@@ -100,7 +137,7 @@ public class JDBCFlinkConsumer {
         env.execute("JDBC IoT Data Pipeline");
     }
     
-    public static class SensorRecord {
+        public static class SensorRecord implements java.io.Serializable {
         // Matching benchmark.sensors_local schema
         public String device_id;
         public String device_type;
@@ -185,6 +222,73 @@ public class JDBCFlinkConsumer {
             this.packets_received = json.has("packets_received") ? json.get("packets_received").asLong() : 0L;
             this.bytes_sent = json.has("bytes_sent") ? json.get("bytes_sent").asLong() : 0L;
             this.bytes_received = json.has("bytes_received") ? json.get("bytes_received").asLong() : 0L;
+        }
+        
+        public SensorRecord(GenericRecord avroRecord) {
+            // Map from Pulsar AVRO to ClickHouse schema - FIXED for actual AVRO schema
+            // Convert integer sensorId to string device_id
+            this.device_id = avroRecord.get("sensorId") != null ? 
+                "sensor_" + avroRecord.get("sensorId").toString() : "device_unknown";
+            
+            // Convert integer sensorType to string device_type
+            int sensorTypeInt = avroRecord.get("sensorType") != null ? 
+                ((Number) avroRecord.get("sensorType")).intValue() : 1;
+            this.device_type = getSensorTypeString(sensorTypeInt);
+            
+            this.customer_id = "customer_0001"; // Default value since not in AVRO schema
+            
+            // FIXED: No location field in AVRO schema - use sensorId for site_id
+            int sensorId = avroRecord.get("sensorId") != null ? 
+                ((Number) avroRecord.get("sensorId")).intValue() : 1;
+            this.site_id = "site_" + String.format("%03d", (sensorId % 100) + 1);
+            
+            // Location data - no metadata in new schema, use defaults
+            this.latitude = 0.0; // Not in optimized schema
+            this.longitude = 0.0; // Not in optimized schema
+            this.altitude = 0.0; // Not in AVRO schema
+            
+            // Sensor readings - FIXED: Use actual AVRO field names
+            this.temperature = avroRecord.get("temperature") != null ? ((Number) avroRecord.get("temperature")).doubleValue() : 0.0;
+            this.humidity = avroRecord.get("humidity") != null ? ((Number) avroRecord.get("humidity")).doubleValue() : 0.0;
+            this.pressure = avroRecord.get("pressure") != null ? ((Number) avroRecord.get("pressure")).doubleValue() : 1013.25;
+            this.co2_level = 400.0; // Default value since not in AVRO schema
+            this.noise_level = 50.0; // Default value since not in AVRO schema
+            this.light_level = 500.0; // Default value since not in AVRO schema
+            this.motion_detected = 0; // Default value since not in AVRO schema
+            
+            // Device metrics - FIXED: Use correct field name batteryLevel
+            this.battery_level = avroRecord.get("batteryLevel") != null ? ((Number) avroRecord.get("batteryLevel")).doubleValue() : 100.0;
+            this.signal_strength = -50.0; // Default value since not in AVRO schema
+            this.memory_usage = 50.0; // Default value since not in AVRO schema
+            this.cpu_usage = 30.0; // Default value since not in AVRO schema
+            
+            // Status - now integer in new schema
+            this.status = avroRecord.get("status") != null ? 
+                ((Number) avroRecord.get("status")).intValue() : 1;
+            
+            this.error_count = 0; // Default value since not in AVRO schema
+            
+            // Network metrics - default values since not in AVRO schema
+            this.packets_sent = 0L;
+            this.packets_received = 0L;
+            this.bytes_sent = 0L;
+            this.bytes_received = 0L;
+        }
+        
+        // Helper method to convert integer sensor type to string
+        // FIXED: Match producer's sensor type mapping (1-8)
+        private String getSensorTypeString(int sensorType) {
+            switch (sensorType) {
+                case 1: return "temperature_sensor";
+                case 2: return "humidity_sensor";
+                case 3: return "pressure_sensor";
+                case 4: return "motion_sensor";
+                case 5: return "light_sensor";
+                case 6: return "co2_sensor";
+                case 7: return "noise_sensor";
+                case 8: return "multisensor";
+                default: return "sensor_type_" + sensorType;
+            }
         }
     }
     
@@ -449,7 +553,7 @@ public class JDBCFlinkConsumer {
         private Connection connection;
         private PreparedStatement insertStatement;
         private int batchCount = 0;
-        private static final int BATCH_SIZE = 1000;  // Increased from 100 to 1000 for better throughput
+        private static final int BATCH_SIZE = 5000;  // Increased from 1000 to 5000 for better throughput
         
         // Checkpoint state
         private transient ListState<Integer> batchCountState;

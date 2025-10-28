@@ -181,10 +181,10 @@ fi
 echo ""
 
 # ============================================================================
-# STEP 4: Patch Flink Deployments with Metrics Configuration
+# STEP 4: Check Flink Deployment Configuration
 # ============================================================================
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}STEP 4: Updating Flink Deployments${NC}"
+echo -e "${BLUE}STEP 4: Checking Flink Deployment Configuration${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
@@ -193,142 +193,28 @@ FLINK_DEPLOYMENT=$(kubectl get flinkdeployment -n "$FLINK_NAMESPACE" -o name 2>/
 
 if [ -n "$FLINK_DEPLOYMENT" ]; then
     echo -e "${GREEN}✓${NC} Found FlinkDeployment (Flink Operator): $FLINK_DEPLOYMENT"
-    echo "Patching FlinkDeployment to enable Prometheus metrics..."
-    
     FLINK_NAME=$(echo $FLINK_DEPLOYMENT | sed 's|flinkdeployment.flink.apache.org/||')
     
-    kubectl patch flinkdeployment "$FLINK_NAME" -n "$FLINK_NAMESPACE" --type=merge -p '
-spec:
-  flinkConfiguration:
-    metrics.reporters: prometheus
-    metrics.reporter.prometheus.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
-    metrics.reporter.prometheus.port: 9249-9259
-    metrics.reporter.prometheus.filterLabelValueCharacters: "false"
-    metrics.system-resource: "true"
-    metrics.system-resource-probing-interval: "5000"
-  jobManager:
-    podTemplate:
-      metadata:
-        annotations:
-          prometheus.io/scrape: "true"
-          prometheus.io/port: "9249"
-          prometheus.io/path: "/metrics"
-      spec:
-        initContainers:
-        - name: download-prometheus-jar
-          image: curlimages/curl:latest
-          command:
-          - sh
-          - -c
-          - |
-            curl -L https://repo1.maven.org/maven2/org/apache/flink/flink-metrics-prometheus/1.18.0/flink-metrics-prometheus-1.18.0.jar \
-              -o /flink-prometheus/flink-metrics-prometheus-1.18.0.jar
-          volumeMounts:
-          - name: flink-prometheus-jar
-            mountPath: /flink-prometheus
-        containers:
-        - name: flink-main-container
-          ports:
-          - containerPort: 9249
-            name: metrics
-            protocol: TCP
-          volumeMounts:
-          - name: flink-prometheus-jar
-            mountPath: /opt/flink/lib/flink-metrics-prometheus-1.18.0.jar
-            subPath: flink-metrics-prometheus-1.18.0.jar
-        volumes:
-        - name: flink-prometheus-jar
-          emptyDir: {}
-  taskManager:
-    podTemplate:
-      metadata:
-        annotations:
-          prometheus.io/scrape: "true"
-          prometheus.io/port: "9249"
-          prometheus.io/path: "/metrics"
-      spec:
-        initContainers:
-        - name: download-prometheus-jar
-          image: curlimages/curl:latest
-          command:
-          - sh
-          - -c
-          - |
-            curl -L https://repo1.maven.org/maven2/org/apache/flink/flink-metrics-prometheus/1.18.0/flink-metrics-prometheus-1.18.0.jar \
-              -o /flink-prometheus/flink-metrics-prometheus-1.18.0.jar
-          volumeMounts:
-          - name: flink-prometheus-jar
-            mountPath: /flink-prometheus
-        containers:
-        - name: flink-main-container
-          ports:
-          - containerPort: 9249
-            name: metrics
-            protocol: TCP
-          volumeMounts:
-          - name: flink-prometheus-jar
-            mountPath: /opt/flink/lib/flink-metrics-prometheus-1.18.0.jar
-            subPath: flink-metrics-prometheus-1.18.0.jar
-        volumes:
-        - name: flink-prometheus-jar
-          emptyDir: {}
-'
+    echo "Checking if Prometheus metrics are configured..."
     
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓${NC} FlinkDeployment patched successfully"
-        echo "  Flink Operator will restart pods automatically..."
-        echo "  Waiting for new pods to come up..."
-        sleep 20
+    if kubectl get flinkdeployment "$FLINK_NAME" -n "$FLINK_NAMESPACE" -o yaml | grep -q "metrics.reporter.prometheus"; then
+        echo -e "${GREEN}✓${NC} Prometheus metrics configuration found"
     else
-        echo -e "${RED}✗${NC} Failed to patch FlinkDeployment"
+        echo -e "${RED}✗${NC} Prometheus metrics NOT configured"
+        echo ""
+        echo -e "${YELLOW}⚠ ACTION REQUIRED:${NC}"
+        echo "  The FlinkDeployment needs to include Prometheus metrics configuration."
+        echo "  Please ensure flink-job-deployment.yaml has:"
+        echo "    • flinkConfiguration with metrics.reporters: prometheus"
+        echo "    • initContainers to download Prometheus JAR"
+        echo "    • Port 9249 exposed"
+        echo "    • Prometheus annotations"
+        echo ""
+        echo "  Then apply: kubectl apply -f flink-job-deployment.yaml"
     fi
 else
-    # Fallback to regular deployments
-    echo "Looking for regular Flink deployments..."
-    JM_DEPLOYMENT=$(kubectl get deployments -n "$FLINK_NAMESPACE" -o name 2>/dev/null | grep -i jobmanager | head -1)
-    TM_DEPLOYMENT=$(kubectl get deployments -n "$FLINK_NAMESPACE" -o name 2>/dev/null | grep -i taskmanager | head -1)
-
-    if [ -n "$JM_DEPLOYMENT" ]; then
-        echo "Patching JobManager deployment..."
-        kubectl patch $JM_DEPLOYMENT -n "$FLINK_NAMESPACE" --type=merge -p='
-{
-  "spec": {
-    "template": {
-      "metadata": {
-        "annotations": {
-          "prometheus.io/scrape": "true",
-          "prometheus.io/port": "9249",
-          "prometheus.io/path": "/metrics"
-        }
-      }
-    }
-  }
-}'
-        echo -e "${GREEN}✓${NC} JobManager patched"
-    else
-        echo -e "${YELLOW}⚠${NC} JobManager deployment not found"
-    fi
-
-    if [ -n "$TM_DEPLOYMENT" ]; then
-        echo "Patching TaskManager deployment..."
-        kubectl patch $TM_DEPLOYMENT -n "$FLINK_NAMESPACE" --type=merge -p='
-{
-  "spec": {
-    "template": {
-      "metadata": {
-        "annotations": {
-          "prometheus.io/scrape": "true",
-          "prometheus.io/port": "9249",
-          "prometheus.io/path": "/metrics"
-        }
-      }
-    }
-  }
-}'
-        echo -e "${GREEN}✓${NC} TaskManager patched"
-    else
-        echo -e "${YELLOW}⚠${NC} TaskManager deployment not found"
-    fi
+    echo -e "${YELLOW}⚠${NC} No FlinkDeployment found"
+    echo "  This setup script works with Flink Operator deployments."
 fi
 
 echo ""
@@ -500,29 +386,18 @@ echo -e "${GREEN}✓${NC} ServiceMonitor created: flink-metrics"
 echo -e "${GREEN}✓${NC} Prometheus annotations added to Flink pods"
 echo ""
 
-echo -e "${CYAN}⚠ IMPORTANT: Manual Steps Required${NC}"
+echo -e "${CYAN}✅ Flink Metrics Configuration${NC}"
 echo ""
-echo "Your Flink deployments need to be updated to:"
+echo "The flink-job-deployment.yaml now includes:"
+echo "  ✓ Prometheus metrics reporter configuration"
+echo "  ✓ InitContainer to download Prometheus JAR"
+echo "  ✓ Port 9249 exposed for metrics"
+echo "  ✓ Prometheus annotations for scraping"
 echo ""
-echo "1. Mount the flink-config ConfigMap"
-echo "2. Download Prometheus JAR (via initContainer)"
-echo "3. Expose port 9249 for metrics"
+echo "To apply the configuration:"
+echo "  kubectl apply -f $SCRIPT_DIR/flink-job-deployment.yaml"
 echo ""
-echo "See example configuration in:"
-echo "  $SCRIPT_DIR/flink-prometheus-annotations.yaml"
-echo ""
-echo "Quick patch command:"
-echo ""
-echo "  kubectl edit deployment <flink-jobmanager-name> -n $FLINK_NAMESPACE"
-echo ""
-echo "Add these sections (from flink-prometheus-annotations.yaml):"
-echo "  • spec.template.spec.containers[].ports (add port 9249)"
-echo "  • spec.template.spec.volumes (add flink-config and prometheus-jar)"
-echo "  • spec.template.spec.containers[].volumeMounts"
-echo "  • spec.template.spec.initContainers (download Prometheus JAR)"
-echo ""
-echo "Then restart pods:"
-echo "  kubectl rollout restart deployment/<name> -n $FLINK_NAMESPACE"
+echo "This will restart Flink pods with metrics enabled."
 echo ""
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

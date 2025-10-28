@@ -1,10 +1,31 @@
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: flink-metrics
+  namespace: flink-benchmark
+  labels:
+    app: flink
+    component: metrics
+spec:
+  selector:
+    matchLabels:
+      app: flink-metrics
+  namespaceSelector:
+    matchNames:
+      - flink-benchmark
+  endpoints:
+    - port: metrics
+      interval: 15s
+      path: /metrics
+      scrapeTimeout: 10s
+---
 apiVersion: v1
 kind: Service
 metadata:
   name: flink-jobmanager-metrics
   namespace: flink-benchmark
   labels:
-    app: flink
+    app: flink-metrics
     component: jobmanager
 spec:
   type: ClusterIP
@@ -14,7 +35,6 @@ spec:
       targetPort: 9249
       protocol: TCP
   selector:
-    app: flink
     component: jobmanager
 ---
 apiVersion: v1
@@ -23,7 +43,7 @@ metadata:
   name: flink-taskmanager-metrics
   namespace: flink-benchmark
   labels:
-    app: flink
+    app: flink-metrics
     component: taskmanager
 spec:
   type: ClusterIP
@@ -33,26 +53,4 @@ spec:
       targetPort: 9249
       protocol: TCP
   selector:
-    app: flink
     component: taskmanager
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: flink-metrics
-  namespace: flink-benchmark
-  labels:
-    app: flink
-    release: pulsar  # Important: matches Prometheus Operator release name
-spec:
-  selector:
-    matchLabels:
-      app: flink
-  namespaceSelector:
-    matchNames:
-      - flink-benchmark
-  endpoints:
-    - port: metrics
-      interval: 15s
-      path: /metrics
-

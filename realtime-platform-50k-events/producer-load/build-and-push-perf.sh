@@ -4,7 +4,7 @@
 # Build and Push IoT Performance Producer (pulsar-sensor-perf) to ECR
 # ================================================================================
 # This script:
-#   1. Copies the pulsar-sensor-perf binary and target from aws-deploy/scripts
+#   1. Checks for pulsar-sensor-perf binary in local directory
 #   2. Builds the Docker image for x86_64 (linux/amd64)
 #   3. Creates ECR repository if it doesn't exist
 #   4. Pushes the image to ECR
@@ -37,25 +37,15 @@ echo "Image Tag: $IMAGE_TAG"
 echo "Full Image: $FULL_IMAGE_NAME"
 echo ""
 
-# Copy pulsar-sensor-perf binary and target from aws-deploy/scripts
-echo -e "${YELLOW}==> Copying pulsar-sensor-perf binary and target...${NC}"
+# Check pulsar-sensor-perf binary in local directory
+echo -e "${YELLOW}==> Checking pulsar-sensor-perf binary...${NC}"
 
-SOURCE_DIR="../../../aws-deploy/scripts"
-if [ ! -f "$SOURCE_DIR/pulsar-sensor-perf" ]; then
-    echo -e "${RED}ERROR: pulsar-sensor-perf not found at $SOURCE_DIR${NC}"
+if [ ! -f "./pulsar-sensor-perf" ]; then
+    echo -e "${RED}ERROR: pulsar-sensor-perf not found in current directory${NC}"
     exit 1
 fi
 
-if [ ! -d "$SOURCE_DIR/target" ]; then
-    echo -e "${RED}ERROR: target directory not found at $SOURCE_DIR${NC}"
-    exit 1
-fi
-
-# Copy files
-cp "$SOURCE_DIR/pulsar-sensor-perf" .
-cp -r "$SOURCE_DIR/target" .
-
-echo -e "${GREEN}✓ Files copied${NC}"
+echo -e "${GREEN}✓ pulsar-sensor-perf found in local directory${NC}"
 echo ""
 
 # Check prerequisites

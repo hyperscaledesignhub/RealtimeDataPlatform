@@ -8,6 +8,10 @@ The system ingests event data from producers, processes it in real-time using st
 
 **Architecture:** Producer → Pulsar → Flink → ClickHouse
 
+## Platform Throughput
+
+![Platform Throughput](./Platform%20throughput.png)
+
 ---
 
 ## 📚 Documentation Guide

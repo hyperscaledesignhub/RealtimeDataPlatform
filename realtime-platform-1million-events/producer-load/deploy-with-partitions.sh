@@ -4,10 +4,19 @@
 # Deploy IoT Producer to EKS with Configurable Topic Partitions
 # ================================================================================
 # This script deploys the IoT data producer pods to Kubernetes with a
-# configurable number of topic partitions
+# configurable number of topic partitions and replica scaling
 # 
-# Usage: ./deploy-with-partitions.sh [PARTITIONS] [REPLICAS]
-# Example: ./deploy-with-partitions.sh 8 3
+# Usage: ./deploy-with-partitions.sh [PARTITIONS] [MIN_REPLICAS] [MAX_REPLICAS]
+# Example: ./deploy-with-partitions.sh 64 1 10
+# 
+# Arguments:
+#   PARTITIONS     - Number of topic partitions (default: 4)
+#   MIN_REPLICAS   - Initial number of producer replicas (default: 1)
+#   MAX_REPLICAS   - Maximum replicas for scaling (default: MIN_REPLICAS)
+# 
+# Behavior:
+#   - When Flink is NOT running: Creates topic with PARTITIONS, no producer deployment
+#   - When Flink IS running: Skips topic creation, deploys MIN_REPLICAS producer pods
 # 
 # Prerequisites:
 #   - EKS cluster is running
@@ -26,7 +35,8 @@ NC='\033[0m' # No Color
 
 # Parse command line arguments
 PARTITIONS="${1:-4}"  # Default to 4 partitions if not specified
-REPLICAS="${2:-3}"    # Default to 3 replicas if not specified
+REPLICAS="${2:-1}"    # Default to 1 replica if not specified
+MAX_REPLICAS="${3:-$REPLICAS}" # Default to REPLICAS if not specified
 TOPIC_NAME="persistent://public/default/iot-sensor-data"
 
 # Configuration
@@ -37,15 +47,22 @@ NAMESPACE="iot-pipeline"
 # Validate inputs
 if ! [[ "$PARTITIONS" =~ ^[0-9]+$ ]] || [ "$PARTITIONS" -lt 1 ]; then
     echo -e "${RED}ERROR: PARTITIONS must be a positive number${NC}"
-    echo "Usage: $0 [PARTITIONS] [REPLICAS]"
-    echo "Example: $0 8 3"
+    echo "Usage: $0 [PARTITIONS] [MIN_REPLICAS] [MAX_REPLICAS]"
+    echo "Example: $0 64 1 10"
     exit 1
 fi
 
 if ! [[ "$REPLICAS" =~ ^[0-9]+$ ]] || [ "$REPLICAS" -lt 1 ] || [ "$REPLICAS" -gt 10 ]; then
-    echo -e "${RED}ERROR: REPLICAS must be a number between 1 and 10${NC}"
-    echo "Usage: $0 [PARTITIONS] [REPLICAS]"
-    echo "Example: $0 8 3"
+    echo -e "${RED}ERROR: MIN_REPLICAS must be a number between 1 and 10${NC}"
+    echo "Usage: $0 [PARTITIONS] [MIN_REPLICAS] [MAX_REPLICAS]"
+    echo "Example: $0 64 1 10"
+    exit 1
+fi
+
+if ! [[ "$MAX_REPLICAS" =~ ^[0-9]+$ ]] || [ "$MAX_REPLICAS" -lt "$REPLICAS" ]; then
+    echo -e "${RED}ERROR: MAX_REPLICAS must be >= MIN_REPLICAS${NC}"
+    echo "Usage: $0 [PARTITIONS] [MIN_REPLICAS] [MAX_REPLICAS]"
+    echo "Example: $0 64 1 10"
     exit 1
 fi
 
@@ -53,7 +70,8 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}IoT Producer Deployment with Partitions${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo -e "${BLUE}Partitions: $PARTITIONS${NC}"
-echo -e "${BLUE}Replicas: $REPLICAS${NC}"
+echo -e "${BLUE}Initial Replicas: $REPLICAS${NC}"
+echo -e "${BLUE}Max Replicas: $MAX_REPLICAS${NC}"
 echo -e "${BLUE}Topic: $TOPIC_NAME${NC}"
 echo ""
 
@@ -116,6 +134,110 @@ else
     echo ""
 fi
 
+# Check if Flink job is running (in flink-benchmark namespace)
+echo -e "${YELLOW}==> Checking Flink job status...${NC}"
+FLINK_RUNNING=false
+FLINK_NAMESPACE="flink-benchmark"
+
+# Check if Flink deployment exists
+if kubectl get deployment -n "$FLINK_NAMESPACE" &> /dev/null 2>&1; then
+    # Check for running Flink pods
+    FLINK_PODS=$(kubectl get pods -n "$FLINK_NAMESPACE" --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$FLINK_PODS" -gt 0 ]; then
+        FLINK_RUNNING=true
+        echo -e "${GREEN}✓ Flink job is running in namespace '$FLINK_NAMESPACE' ($FLINK_PODS pods)${NC}"
+        echo "   Pods:"
+        kubectl get pods -n "$FLINK_NAMESPACE" --no-headers | head -5
+    else
+        echo -e "${YELLOW}⚠ Flink namespace exists but no Running pods found${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠ Flink namespace '$FLINK_NAMESPACE' not found${NC}"
+fi
+echo ""
+
+# If Flink is NOT running, create topic with PARTITIONS and exit (no producer deployment)
+if [ "$FLINK_RUNNING" = false ]; then
+    echo -e "${RED}========================================${NC}"
+    echo -e "${RED}⚠️  FLINK JOB IS NOT RUNNING!${NC}"
+    echo -e "${RED}========================================${NC}"
+    echo ""
+    echo "The Flink consumer job must be running before starting producers."
+    echo "Otherwise, messages will accumulate without being consumed."
+    echo ""
+    echo -e "${YELLOW}==> Creating Pulsar topic with $PARTITIONS partitions (preparation)...${NC}"
+    echo -e "${YELLOW}Note: Topic will be created with PARTITIONS ($PARTITIONS) since Flink is not running${NC}"
+    echo ""
+    
+    # Create topic but don't deploy producers
+    # Initialize EXISTING_PARTITIONS to 0
+    EXISTING_PARTITIONS="0"
+    
+    # Check if topic exists and has correct partitions
+    if kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics list public/default 2>/dev/null | grep -q "iot-sensor-data"; then
+        echo -e "${YELLOW}Topic exists, checking partition count...${NC}"
+        EXISTING_PARTITIONS=$(kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics get-partitioned-topic-metadata "$TOPIC_NAME" 2>/dev/null | grep -o '"partitions" : [0-9]*' | grep -o '[0-9]*' || echo "0")
+        
+        if [ "$EXISTING_PARTITIONS" = "$PARTITIONS" ]; then
+            echo -e "${GREEN}✓ Topic already has $PARTITIONS partitions${NC}"
+        else
+            echo -e "${YELLOW}Topic has $EXISTING_PARTITIONS partitions, need $PARTITIONS. Deleting and recreating...${NC}"
+            kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics delete-partitioned-topic "$TOPIC_NAME" --force 2>/dev/null || \
+            kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics delete "$TOPIC_NAME" --force 2>/dev/null || true
+            sleep 3
+        fi
+    fi
+    
+    # Create partitioned topic with PARTITIONS (only if needed)
+    if [ "$EXISTING_PARTITIONS" != "$PARTITIONS" ]; then
+        echo -e "${YELLOW}Creating partitioned topic with $PARTITIONS partitions...${NC}"
+        CREATE_OUTPUT=$(kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics create-partitioned-topic "$TOPIC_NAME" --partitions "$PARTITIONS" 2>&1)
+        CREATE_EXIT=$?
+        
+        if [ $CREATE_EXIT -eq 0 ]; then
+            echo -e "${GREEN}✓ Topic created with $PARTITIONS partitions${NC}"
+        elif echo "$CREATE_OUTPUT" | grep -q "already exists"; then
+            echo -e "${GREEN}✓ Topic already exists with $PARTITIONS partitions${NC}"
+        else
+            echo -e "${RED}ERROR: Failed to create partitioned topic${NC}"
+            echo "$CREATE_OUTPUT"
+            exit 1
+        fi
+    fi
+    
+    # Set retention
+    echo -e "${YELLOW}Setting topic retention to 30 minutes...${NC}"
+    kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics set-retention "$TOPIC_NAME" --time 30m --size 10G 2>/dev/null || true
+    echo -e "${GREEN}✓ Retention policy updated${NC}"
+    
+    echo ""
+    echo -e "${GREEN}✓ Topic preparation complete!${NC}"
+    echo ""
+    echo -e "${YELLOW}========================================${NC}"
+    echo -e "${YELLOW}NEXT STEPS:${NC}"
+    echo -e "${YELLOW}========================================${NC}"
+    echo ""
+    echo "Topic created with PARTITIONS ($PARTITIONS)."
+    echo "Producers will NOT be deployed until Flink is running."
+    echo ""
+    echo "1. Start the Flink consumer job:"
+    echo "   cd ../flink-load"
+    echo "   kubectl apply -f flink-job-deployment.yaml"
+    echo ""
+    echo "2. Wait for Flink job to be running:"
+    echo "   kubectl get pods -n flink-benchmark"
+    echo ""
+    echo "3. Then run this script again to deploy producers:"
+    echo "   ./deploy-with-partitions.sh $PARTITIONS $REPLICAS $MAX_REPLICAS"
+    echo ""
+    exit 0
+fi
+
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}✓ Flink is running - proceeding with deployment${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo ""
+
 # Stop existing deployment
 echo -e "${YELLOW}==> Stopping existing producer deployment...${NC}"
 kubectl scale statefulset iot-perf-producer -n "$NAMESPACE" --replicas=0 2>/dev/null || true
@@ -123,67 +245,33 @@ kubectl delete statefulset iot-perf-producer -n "$NAMESPACE" 2>/dev/null || true
 echo -e "${GREEN}✓ Existing deployment stopped${NC}"
 echo ""
 
-# Create/update Pulsar topic with partitions
-echo -e "${YELLOW}==> Creating Pulsar topic with $PARTITIONS partitions...${NC}"
+# When Flink is running, skip topic creation and just verify it exists
+echo -e "${YELLOW}==> Verifying Pulsar topic exists...${NC}"
+echo -e "${YELLOW}Note: Skipping topic creation since Flink is running. Using existing topic.${NC}"
 
-# Initialize EXISTING_PARTITIONS to 0
-EXISTING_PARTITIONS="0"
+# Check if topic exists by checking partitioned topic metadata (works for both partitioned and non-partitioned)
+EXISTING_PARTITIONS=$(kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics get-partitioned-topic-metadata "$TOPIC_NAME" 2>/dev/null | grep -o '"partitions" : [0-9]*' | grep -o '[0-9]*' || echo "0")
 
-# Check if topic exists and has correct partitions
-if kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics list public/default 2>/dev/null | grep -q "iot-sensor-data"; then
-    echo -e "${YELLOW}Topic exists, checking partition count...${NC}"
-    EXISTING_PARTITIONS=$(kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics get-partitioned-topic-metadata "$TOPIC_NAME" 2>/dev/null | grep -o '"partitions" : [0-9]*' | grep -o '[0-9]*' || echo "0")
-    
-    if [ "$EXISTING_PARTITIONS" = "$PARTITIONS" ]; then
-        echo -e "${GREEN}✓ Topic already has $PARTITIONS partitions${NC}"
+if [ "$EXISTING_PARTITIONS" -gt 0 ] || kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics list public/default 2>/dev/null | grep -q "^${TOPIC_NAME}$"; then
+    if [ "$EXISTING_PARTITIONS" -gt 0 ]; then
+        echo -e "${GREEN}✓ Partitioned topic exists with $EXISTING_PARTITIONS partitions${NC}"
     else
-        echo -e "${YELLOW}Topic has $EXISTING_PARTITIONS partitions, need $PARTITIONS. Deleting and recreating...${NC}"
-        # Try to delete as partitioned topic first
-        kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics delete-partitioned-topic "$TOPIC_NAME" --force 2>/dev/null || \
-        # If that fails, try regular delete
-        kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics delete "$TOPIC_NAME" --force 2>/dev/null || true
-        sleep 3
+        echo -e "${GREEN}✓ Non-partitioned topic exists${NC}"
+        EXISTING_PARTITIONS=1
     fi
-fi
-
-# Create partitioned topic (only if needed)
-if [ "$EXISTING_PARTITIONS" != "$PARTITIONS" ]; then
-    echo -e "${YELLOW}Creating partitioned topic with $PARTITIONS partitions...${NC}"
-    if ! kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics create-partitioned-topic "$TOPIC_NAME" --partitions "$PARTITIONS" 2>/dev/null; then
-        echo -e "${RED}ERROR: Failed to create partitioned topic${NC}"
-        exit 1
-    fi
+    
+    # Set retention policy if topic exists
+    echo -e "${YELLOW}Setting topic retention to 30 minutes...${NC}"
+    kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics set-retention "$TOPIC_NAME" --time 30m --size 10G 2>/dev/null || true
+    echo -e "${GREEN}✓ Retention policy updated${NC}"
 else
-    echo -e "${GREEN}✓ Using existing topic with correct partition count${NC}"
-fi
-
-# Verify topic creation
-echo -e "${YELLOW}Verifying topic creation...${NC}"
-TOPIC_INFO=$(kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics get-partitioned-topic-metadata "$TOPIC_NAME" 2>/dev/null)
-if [ $? -ne 0 ]; then
-    echo -e "${RED}ERROR: Failed to get topic metadata${NC}"
+    echo -e "${RED}ERROR: Topic does not exist!${NC}"
+    echo ""
+    echo "Please run this script first when Flink is NOT running to create the topic:"
+    echo "  ./deploy-with-partitions.sh $PARTITIONS $REPLICAS $MAX_REPLICAS"
+    echo ""
     exit 1
 fi
-
-echo "$TOPIC_INFO"
-
-PARTITION_COUNT=$(echo "$TOPIC_INFO" | grep -o '"partitions" : [0-9]*' | grep -o '[0-9]*')
-if [ "$PARTITION_COUNT" = "$PARTITIONS" ]; then
-    echo -e "${GREEN}✓ Topic created with $PARTITIONS partitions${NC}"
-else
-    echo -e "${RED}ERROR: Topic creation failed or wrong partition count${NC}"
-    echo -e "${RED}Expected: $PARTITIONS partitions, Got: $PARTITION_COUNT partitions${NC}"
-    exit 1
-fi
-echo ""
-
-# Set topic retention policy
-echo -e "${YELLOW}==> Setting topic retention to 30 minutes...${NC}"
-if ! kubectl exec -n pulsar pulsar-broker-0 -- bin/pulsar-admin topics set-retention "$TOPIC_NAME" --time 30m --size 10G; then
-    echo -e "${RED}ERROR: Failed to set retention policy on topic${NC}"
-    echo -e "${YELLOW}Continuing deployment...${NC}"
-fi
-echo -e "${GREEN}✓ Retention policy updated${NC}"
 echo ""
 
 # Update StatefulSet configuration
@@ -193,11 +281,13 @@ echo -e "${YELLOW}==> Updating StatefulSet configuration...${NC}"
 TEMP_STATEFULSET="/tmp/producer-statefulset-temp.yaml"
 cp producer-statefulset-perf.yaml "$TEMP_STATEFULSET"
 
-# Update replicas in the temporary file
-sed -i.bak "s/replicas: 3/replicas: $REPLICAS/g" "$TEMP_STATEFULSET"
+# Update replicas in the temporary file (start with MIN_REPLICAS)
+sed -i.bak "s/replicas: [0-9]*/replicas: $REPLICAS/g" "$TEMP_STATEFULSET"
 
-# Update NUM_REPLICAS environment variable to match actual replica count
-sed -i.bak2 "s/value: \"3\"/value: \"$REPLICAS\"/g" "$TEMP_STATEFULSET"
+# Update NUM_REPLICAS environment variable for device distribution (use MAX_REPLICAS for total device calculation)
+if grep -q "NUM_REPLICAS" "$TEMP_STATEFULSET"; then
+    sed -i.bak2 "s/value: \"[0-9]*\" # NUM_REPLICAS/value: \"$MAX_REPLICAS\" # NUM_REPLICAS/g" "$TEMP_STATEFULSET"
+fi
 
 echo -e "${GREEN}✓ StatefulSet configuration updated${NC}"
 echo ""
@@ -268,13 +358,15 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Configuration Summary:"
 echo "  - Topic: $TOPIC_NAME"
-echo "  - Partitions: $PARTITIONS"
-echo "  - Replicas: $REPLICAS"
-echo "  - Total throughput: ~$((REPLICAS * 250000)) msg/sec"
+echo "  - Topic Partitions: $EXISTING_PARTITIONS (existing topic, not modified)"
+echo "  - Producer Replicas: $REPLICAS (MIN_REPLICAS)"
+echo "  - Max Replicas: $MAX_REPLICAS"
+echo "  - Current throughput: ~$((REPLICAS * 250000)) msg/sec"
+echo "  - Max throughput: ~$((MAX_REPLICAS * 250000)) msg/sec"
 echo ""
 echo "Useful commands:"
 echo ""
-echo "  # Scale producer:"
+echo "  # Scale producer (up to $MAX_REPLICAS):"
 echo "  kubectl scale statefulset iot-perf-producer -n $NAMESPACE --replicas=5"
 echo ""
 echo "  # View logs (all pods):"

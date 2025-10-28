@@ -13,7 +13,7 @@ metadata:
     component: perf-producer
 spec:
   serviceName: iot-perf-producer
-  replicas: 4  # Scale based on desired throughput
+  replicas: 1  # Scale based on desired throughput
   selector:
     matchLabels:
       app: iot-perf-producer

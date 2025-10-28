@@ -238,10 +238,10 @@ locals {
 
   pulsar_proxy_config = {
     name = "pulsar-proxy"
-    instance_types = ["c5.2xlarge"]
+    instance_types = ["c5.4xlarge"]
     capacity_type  = var.use_spot_instances ? "SPOT" : "ON_DEMAND"
     min_size     = 1
-    max_size     = 3
+    max_size     = 6
     desired_size = var.pulsar_proxy_desired_size
     disk_size = 30
     disk_type = "gp3"

@@ -75,11 +75,11 @@ bookkeeper:
   
   resources:
     requests:
-      memory: "2Gi"
-      cpu: "1"
-    limits:
-      memory: "4Gi"
+      memory: "8Gi"
       cpu: "2"
+    limits:
+      memory: "12Gi"
+      cpu: "4"
   
   # Volume configuration for NVMe SSDs
   volumes:
@@ -129,6 +129,10 @@ bookkeeper:
     
     # Stats
     statsProviderClass: "org.apache.bookkeeper.stats.prometheus.PrometheusMetricsProvider"
+    
+    # JVM settings for heap and direct memory
+    BOOKIE_MEM: "-Xms4096m -Xmx8192m"
+    BOOKIE_EXTRA_OPTS: "-XX:MaxDirectMemorySize=4096m"
 
 
 # Broker Configuration
@@ -152,10 +156,10 @@ broker:
   
   resources:
     requests:
-      memory: "2Gi"
+      memory: "8Gi"
       cpu: "1"
     limits:
-      memory: "4Gi"
+      memory: "12Gi"
       cpu: "2"
   
   configData:
@@ -180,6 +184,10 @@ broker:
     # Stats
     exposeTopicLevelMetricsInPrometheus: "true"
     exposeConsumerLevelMetricsInPrometheus: "false"
+    
+    # JVM settings for heap and direct memory
+    PULSAR_MEM: "-Xms4096m -Xmx8192m"
+    PULSAR_EXTRA_OPTS: "-XX:MaxDirectMemorySize=4096m"
 
 # Proxy Configuration
 proxy:
@@ -221,6 +229,15 @@ monitoring:
     adminPassword: "admin123"  # Change this!
     service:
       type: LoadBalancer
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    resources:
+      requests:
+        memory: "2Gi"
+        cpu: "500m"
+      limits:
+        memory: "4Gi"
+        cpu: "2"
 
 # Victoria Metrics for monitoring (as configured in the helm chart)
 victoria-metrics-k8s-stack:
@@ -230,7 +247,18 @@ victoria-metrics-k8s-stack:
   grafana:
     enabled: true
     adminPassword: "admin123"  # Change this!
+    service:
+      type: LoadBalancer
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
     persistence:
       enabled: true
       size: 10Gi
       storageClassName: "gp3"
+    resources:
+      requests:
+        memory: "2Gi"
+        cpu: "500m"
+      limits:
+        memory: "4Gi"
+        cpu: "2"

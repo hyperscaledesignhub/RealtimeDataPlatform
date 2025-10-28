@@ -29,14 +29,14 @@ flink_jobmanager_desired_size = 1
 # Pulsar configuration
 pulsar_zookeeper_desired_size = 3
 pulsar_broker_desired_size = 6  # Combined broker-bookie
-pulsar_proxy_desired_size = 2
+pulsar_proxy_desired_size = 3
 
 # ClickHouse configuration
 clickhouse_desired_size = 6
 clickhouse_query_desired_size = 1
 
 # Producer configuration
-producer_desired_size = 3
+producer_desired_size = 4
 
 # General nodes configuration
 general_desired_size = 4

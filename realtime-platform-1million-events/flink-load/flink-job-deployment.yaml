@@ -42,6 +42,13 @@ spec:
     # State Backend Tuning (RocksDB)
     state.backend.rocksdb.predefined-options: FLASH_SSD_OPTIMIZED
     state.backend.rocksdb.thread.num: "4"
+    
+    # Prometheus Metrics Configuration
+    metrics.reporters: prometheus
+    metrics.reporter.prometheus.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+    metrics.reporter.prometheus.port: "9249-9259"
+    metrics.system-resource: "true"
+    metrics.system-resource-probing-interval: "5000"
   
   serviceAccount: flink
   
@@ -54,6 +61,11 @@ spec:
     
     # Place on Flink JobManager nodes
     podTemplate:
+      metadata:
+        annotations:
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "9249"
+          prometheus.io/path: "/metrics"
       spec:
         nodeSelector:
           workload: flink
@@ -62,8 +74,24 @@ spec:
         - key: "flink"
           value: "jobmanager"
           effect: "NoSchedule"
+        initContainers:
+        - name: download-prometheus-jar
+          image: curlimages/curl:latest
+          command:
+          - sh
+          - -c
+          - |
+            curl -L https://repo1.maven.org/maven2/org/apache/flink/flink-metrics-prometheus/1.18.0/flink-metrics-prometheus-1.18.0.jar \
+              -o /flink-prometheus/flink-metrics-prometheus-1.18.0.jar
+          volumeMounts:
+          - name: flink-prometheus-jar
+            mountPath: /flink-prometheus
         containers:
         - name: flink-main-container
+          ports:
+          - containerPort: 9249
+            name: metrics
+            protocol: TCP
           env:
           - name: PULSAR_URL
             value: "pulsar://pulsar-proxy.pulsar.svc.cluster.local:6650"
@@ -78,6 +106,9 @@ spec:
             mountPath: /opt/flink/checkpoints
           - name: flink-savepoints
             mountPath: /opt/flink/savepoints
+          - name: flink-prometheus-jar
+            mountPath: /opt/flink/lib/flink-metrics-prometheus-1.18.0.jar
+            subPath: flink-metrics-prometheus-1.18.0.jar
         volumes:
         - name: flink-checkpoints
           emptyDir:
@@ -85,6 +116,8 @@ spec:
         - name: flink-savepoints
           emptyDir:
             sizeLimit: 5Gi
+        - name: flink-prometheus-jar
+          emptyDir: {}
   
   # TaskManager Configuration
   taskManager:
@@ -95,6 +128,11 @@ spec:
     
     # Place on Flink TaskManager nodes
     podTemplate:
+      metadata:
+        annotations:
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "9249"
+          prometheus.io/path: "/metrics"
       spec:
         nodeSelector:
           workload: flink
@@ -103,8 +141,24 @@ spec:
         - key: "flink"
           value: "taskmanager"
           effect: "NoSchedule"
+        initContainers:
+        - name: download-prometheus-jar
+          image: curlimages/curl:latest
+          command:
+          - sh
+          - -c
+          - |
+            curl -L https://repo1.maven.org/maven2/org/apache/flink/flink-metrics-prometheus/1.18.0/flink-metrics-prometheus-1.18.0.jar \
+              -o /flink-prometheus/flink-metrics-prometheus-1.18.0.jar
+          volumeMounts:
+          - name: flink-prometheus-jar
+            mountPath: /flink-prometheus
         containers:
         - name: flink-main-container
+          ports:
+          - containerPort: 9249
+            name: metrics
+            protocol: TCP
           env:
           - name: PULSAR_URL
             value: "pulsar://pulsar-proxy.pulsar.svc.cluster.local:6650"
@@ -119,6 +173,9 @@ spec:
             mountPath: /opt/flink/checkpoints
           - name: flink-savepoints
             mountPath: /opt/flink/savepoints
+          - name: flink-prometheus-jar
+            mountPath: /opt/flink/lib/flink-metrics-prometheus-1.18.0.jar
+            subPath: flink-metrics-prometheus-1.18.0.jar
         volumes:
         - name: flink-checkpoints
           emptyDir:
@@ -126,6 +183,8 @@ spec:
         - name: flink-savepoints
           emptyDir:
             sizeLimit: 5Gi
+        - name: flink-prometheus-jar
+          emptyDir: {}
   
   # Job Configuration
   job:
