@@ -66,7 +66,7 @@ for i in $(seq $((CURRENT_REPLICAS + 1)) "$DESIRED_REPLICAS"); do
     echo ""
 
     POD_NAME="$STATEFULSET_NAME-$((i - 1))"
-    echo -e "${YELLOW}==> Waiting for pod $POD_NAME to be created...${NC}"
+        echo -e "${YELLOW}==> Waiting for pod $POD_NAME to be created...${NC}"
     
     # Wait for pod to be created (up to 60 seconds)
     WAIT_COUNT=0

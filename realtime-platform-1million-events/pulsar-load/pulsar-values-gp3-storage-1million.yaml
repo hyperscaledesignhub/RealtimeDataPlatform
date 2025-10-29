@@ -36,11 +36,8 @@ zookeeper:
     pulsar-role: zookeeper
     node-type: zookeeper
   
-  # Tolerations for node taints
-  tolerations:
-  - key: "pulsar"
-    value: "zookeeper"
-    effect: "NoSchedule"
+  # Tolerations for node taints (ZooKeeper nodes have no taints)
+  tolerations: []
   
   resources:
     requests:
@@ -59,14 +56,13 @@ zookeeper:
 
 # BookKeeper Configuration
 bookkeeper:
-  replicaCount: 4  # KEPT FROM NEW (was 4 in old)
+  replicaCount: 6
   
-  # Node selector to place on combined broker-bookie nodes
+  # Node selector to place on BookKeeper nodes
   nodeSelector:
     component: broker-bookie
     pulsar-role: broker-bookie
-    node-type: broker-bookie  # KEPT FROM NEW (was 'pulsar' in old)
-    storage-type: nvme
+    node-type: broker-bookie
   
   # Tolerations for node taints
   tolerations:
@@ -79,47 +75,41 @@ bookkeeper:
   
   resources:
     requests:
-      memory: "16Gi"  # i7i.8xlarge has 256GB RAM
-      cpu: "4"        # i7i.8xlarge has 32 vCPUs
+      memory: "8Gi"
+      cpu: "2"
     limits:
-      memory: "32Gi"
-      cpu: "8"
+      memory: "12Gi"
+      cpu: "4"
   
-  # Volume configuration for NVMe SSDs (i7i.8xlarge has 1 x 7,500GB)
+  # Volume configuration for NVMe SSDs
   volumes:
     persistence: true
     useSingleCommonVolume: false
     
-    # Journal on NVMe SSD
+    # Journal on EBS gp3
     journal:
       name: journal
-      size: 1700Gi  # Using part of the 7,500GB NVMe drive
-      storageClassName: "local-nvme"
-      local_storage: false  # We're using custom StorageClass
+      size: 100Gi
+      storageClassName: "gp3"
+      local_storage: false
     
-    # Ledgers on NVMe SSD (shared with journal)
+    # Ledgers on EBS gp3
     ledgers:
       name: ledgers
-      size: 1700Gi  # Using part of the 7,500GB NVMe drive
-      storageClassName: "local-nvme"
-      local_storage: false  # We're using custom StorageClass
+      size: 300Gi
+      storageClassName: "gp3"
+      local_storage: false
   
   # BookKeeper configuration
   configData:
     # Increase journal write buffer
     journalMaxSizeMB: "2048"
     journalMaxBackups: "5"
-    PULSAR_MEM: "-Xms4096m -Xmx4096m -XX:MaxDirectMemorySize=8192m"
     
     # Optimize for SSDs
     journalSyncData: "false"
     journalAdaptiveGroupWrites: "true"
     journalFlushWhenQueueEmpty: "true"
-    journalPageCacheFlushIntervalMSec: "5000"
-    journalMaxBatchSize: "1024"
-    # Write Cache
-    dbStorage_writeCacheMaxSizeMb: "2048"        # Larger write cache
-    dbStorage_readAheadCacheMaxSizeMb: "256"
     
     # Entry log settings
     entryLogSizeLimit: "2147483648"  # 2GB
@@ -139,33 +129,21 @@ bookkeeper:
     
     # Stats
     statsProviderClass: "org.apache.bookkeeper.stats.prometheus.PrometheusMetricsProvider"
-
-  # Extra volume mounts for NVMe drive (i7i.8xlarge)
-  extraVolumeMounts:
-  - name: local-nvme-journal
-    mountPath: /mnt/bookkeeper-journal
-  - name: local-nvme-ledgers
-    mountPath: /mnt/bookkeeper-ledgers
     
-  extraVolumes:
-  - name: local-nvme-journal
-    hostPath:
-      path: /mnt/bookkeeper-journal
-      type: DirectoryOrCreate
-  - name: local-nvme-ledgers
-    hostPath:
-      path: /mnt/bookkeeper-ledgers
-      type: DirectoryOrCreate
+    # JVM settings for heap and direct memory
+    BOOKIE_MEM: "-Xms4096m -Xmx8192m"
+    BOOKIE_EXTRA_OPTS: "-XX:MaxDirectMemorySize=4096m"
+
 
 # Broker Configuration
 broker:
-  replicaCount: 4  # KEPT FROM NEW (was 4 in old)
+  replicaCount: 6
   
-  # Node selector to place on combined broker-bookie nodes
+  # Node selector
   nodeSelector:
     component: broker-bookie
     pulsar-role: broker-bookie
-    node-type: broker-bookie  # KEPT FROM NEW (was 'pulsar' in old)
+    node-type: broker-bookie
   
   # Tolerations for node taints
   tolerations:
@@ -178,15 +156,14 @@ broker:
   
   resources:
     requests:
-      memory: "32Gi"  # i7i.8xlarge has 256GB RAM
-      cpu: "4"        # i7i.8xlarge has 32 vCPUs
+      memory: "8Gi"
+      cpu: "1"
     limits:
-      memory: "64Gi"
-      cpu: "8"
+      memory: "12Gi"
+      cpu: "2"
   
   configData:
     # Broker configuration
-    PULSAR_MEM: "-Xms8g -Xmx32g -XX:MaxDirectMemorySize=16g"
     brokerDeleteInactiveTopicsEnabled: "false"
     loadBalancerEnabled: "true"
     
@@ -203,12 +180,14 @@ broker:
     managedLedgerDefaultEnsembleSize: "3"
     managedLedgerDefaultWriteQuorum: "2"
     managedLedgerDefaultAckQuorum: "2"
-
-    bookkeeperNumberOfChannelsPerBookie: "64"
     
     # Stats
     exposeTopicLevelMetricsInPrometheus: "true"
     exposeConsumerLevelMetricsInPrometheus: "false"
+    
+    # JVM settings for heap and direct memory
+    PULSAR_MEM: "-Xms4096m -Xmx8192m"
+    PULSAR_EXTRA_OPTS: "-XX:MaxDirectMemorySize=4096m"
 
 # Proxy Configuration
 proxy:
@@ -250,26 +229,36 @@ monitoring:
     adminPassword: "admin123"  # Change this!
     service:
       type: LoadBalancer
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    resources:
+      requests:
+        memory: "2Gi"
+        cpu: "500m"
+      limits:
+        memory: "4Gi"
+        cpu: "2"
 
 # Victoria Metrics for monitoring (as configured in the helm chart)
 victoria-metrics-k8s-stack:
   enabled: true
   vmagent:
     enabled: true
-  vmsingle:
-    enabled: true
-    spec:
-      storage:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 50Gi
-        storageClassName: "gp3"
   grafana:
     enabled: true
     adminPassword: "admin123"  # Change this!
+    service:
+      type: LoadBalancer
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
     persistence:
       enabled: true
       size: 10Gi
       storageClassName: "gp3"
+    resources:
+      requests:
+        memory: "2Gi"
+        cpu: "500m"
+      limits:
+        memory: "4Gi"
+        cpu: "2"

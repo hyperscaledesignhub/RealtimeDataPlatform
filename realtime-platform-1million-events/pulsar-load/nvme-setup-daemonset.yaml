@@ -179,7 +179,7 @@ spec:
       - name: pause
         image: gcr.io/google_containers/pause:3.1
       nodeSelector:
-        node-type: bookkeeper
+        node-type: broker-bookie
       tolerations:
       - key: "pulsar"
         value: "bookkeeper"
@@ -224,7 +224,7 @@ spec:
   - ReadWriteOnce
   storageClassName: local-nvme
   local:
-    path: /mnt/bookkeeper/journal
+    path: /mnt/bookkeeper-journal
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -249,7 +249,7 @@ spec:
   - ReadWriteOnce
   storageClassName: local-nvme
   local:
-    path: /mnt/bookkeeper/ledgers
+    path: /mnt/bookkeeper-ledgers
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -275,7 +275,7 @@ spec:
   - ReadWriteOnce
   storageClassName: local-nvme
   local:
-    path: /mnt/bookkeeper/journal
+    path: /mnt/bookkeeper-journal
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -300,7 +300,7 @@ spec:
   - ReadWriteOnce
   storageClassName: local-nvme
   local:
-    path: /mnt/bookkeeper/ledgers
+    path: /mnt/bookkeeper-ledgers
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -325,7 +325,7 @@ spec:
   - ReadWriteOnce
   storageClassName: local-nvme
   local:
-    path: /mnt/bookkeeper/journal
+    path: /mnt/bookkeeper-journal
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -350,7 +350,7 @@ spec:
   - ReadWriteOnce
   storageClassName: local-nvme
   local:
-    path: /mnt/bookkeeper/ledgers
+    path: /mnt/bookkeeper-ledgers
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -375,7 +375,7 @@ spec:
   - ReadWriteOnce
   storageClassName: local-nvme
   local:
-    path: /mnt/bookkeeper/journal
+    path: /mnt/bookkeeper-journal
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -400,7 +400,7 @@ spec:
   - ReadWriteOnce
   storageClassName: local-nvme
   local:
-    path: /mnt/bookkeeper/ledgers
+    path: /mnt/bookkeeper-ledgers
   nodeAffinity:
     required:
       nodeSelectorTerms:

@@ -28,28 +28,48 @@ spec:
       
       containers:
       - name: perf-producer
-        image: 343218179954.dkr.ecr.us-west-2.amazonaws.com/bench-low-infra-iot-perf-producer:latest
+        image: ghcr.io/hyperscaledesignhub/iot-perf-producer:latest
         imagePullPolicy: Always
         
-        # Override CMD with actual arguments
-        args:
-          - "-u"
-          - "pulsar://pulsar-proxy.pulsar.svc.cluster.local:6650"
-          - "-r"
-          - "10000"  # 10K messages per second per pod
-          - "--device-id-min"
-          - "1"
-          - "--device-id-max"
-          - "100000"  # 100K devices
-          - "-m"
-          - "0"  # Run indefinitely (0 = infinite)
-          - "-i"
-          - "10"  # Stats every 10 seconds
-          - "persistent://public/default/iot-sensor-data"
-        
+        # Use entrypoint script for device ID distribution
         env:
+        # Pulsar Configuration
+        - name: PULSAR_URL
+          value: "pulsar://pulsar-proxy.pulsar.svc.cluster.local:6650"
+        - name: PULSAR_TOPIC
+          value: "persistent://public/default/iot-sensor-data"
+        
+        # Performance Configuration
+        - name: MESSAGE_RATE
+          value: "10000"  # 10K messages per second per pod
+        - name: NUM_MESSAGES
+          value: "0"  # Run indefinitely (0 = infinite)
+        - name: STATS_INTERVAL
+          value: "10"  # Stats every 10 seconds
+        
+        # Device ID Distribution Configuration
+        - name: TOTAL_DEVICE_COUNT
+          value: "100000"  # 100K total devices
+        - name: NUM_REPLICAS
+          value: "3"  # Must match the replicas count above
+        
+        # AVRO Configuration
+        - name: USE_AVRO
+          value: "true"
+        
+        # JVM Configuration
         - name: JAVA_OPTS
           value: "-Xms512m -Xmx1024m -XX:+UseG1GC"
+        
+        # Pod identification for device ID calculation
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
         
         resources:
           requests:

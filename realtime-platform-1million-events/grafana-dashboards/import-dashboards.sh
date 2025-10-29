@@ -42,8 +42,7 @@ fi
 echo ""
 echo "Step 2.5: Installing ClickHouse Plugin..."
 echo "Checking if ClickHouse plugin is installed..."
-kubectl exec -n $PULSAR_NAMESPACE deployment/pulsar-grafana -- grafana-cli plugins ls 2>/dev/null | grep -q clickhouse
-if [ $? -eq 0 ]; then
+if kubectl exec -n $PULSAR_NAMESPACE deployment/pulsar-grafana -- grafana-cli plugins ls 2>/dev/null | grep -q clickhouse; then
     echo "✓ ClickHouse plugin already installed"
 else
     echo "Installing ClickHouse plugin..."
@@ -56,12 +55,28 @@ else
     echo "Waiting for Grafana to restart (30 seconds)..."
     sleep 30
     
+    # Wait for Grafana deployment to be ready
+    echo "Waiting for Grafana deployment to be ready..."
+    kubectl wait --for=condition=available --timeout=60s deployment/pulsar-grafana -n $PULSAR_NAMESPACE || true
+    
     # Restart port-forward
-    kill $PF_PID 2>/dev/null
+    echo "Restarting port-forward..."
+    kill $PF_PID 2>/dev/null || true
+    sleep 2
     kubectl port-forward -n $PULSAR_NAMESPACE svc/pulsar-grafana 3000:80 > /tmp/grafana-forward.log 2>&1 &
     PF_PID=$!
+    echo "Port-forward restarted (PID: $PF_PID)"
     sleep 5
-    echo "✓ Grafana restarted and ready"
+    
+    # Verify Grafana is accessible
+    echo "Verifying Grafana is accessible..."
+    if curl -s "$GRAFANA_URL/api/health" > /dev/null 2>&1; then
+        echo "✓ Grafana restarted and ready"
+    else
+        echo "⚠ Grafana may still be starting, waiting longer..."
+        sleep 10
+        echo "✓ Continuing with dashboard import"
+    fi
 fi
 
 echo ""
@@ -91,28 +106,36 @@ else
 fi
 
 # Check if ClickHouse datasource exists
+echo "Checking ClickHouse datasource..."
 CH_DS=$(curl -s -u "$GRAFANA_USER:$GRAFANA_PASS" "$GRAFANA_URL/api/datasources/uid/clickhouse" 2>/dev/null)
 
 if echo "$CH_DS" | grep -q '"uid":"clickhouse"'; then
     echo "✓ ClickHouse datasource already exists"
 else
     echo "Creating ClickHouse datasource..."
-    curl -X POST -H "Content-Type: application/json" -u "$GRAFANA_USER:$GRAFANA_PASS" \
+    CH_RESULT=$(curl -X POST -H "Content-Type: application/json" -u "$GRAFANA_USER:$GRAFANA_PASS" \
       "$GRAFANA_URL/api/datasources" -d '{
         "name": "ClickHouse",
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse",
-        "url": "http://clickhouse-iot-cluster-repl.clickhouse.svc.cluster.local:8123",
+        "url": "http://chi-iot-cluster-repl-iot-cluster-0-0.clickhouse.svc.cluster.local:8123",
         "access": "proxy",
         "database": "benchmark",
         "jsonData": {
           "defaultDatabase": "benchmark",
           "port": 8123,
-          "server": "clickhouse-iot-cluster-repl.clickhouse.svc.cluster.local",
+          "server": "chi-iot-cluster-repl-iot-cluster-0-0.clickhouse.svc.cluster.local",
           "protocol": "http",
           "username": "default"
         }
-      }' 2>&1 | grep -q "success\|Datasource added" && echo "✓ ClickHouse datasource created" || echo "⚠ May already exist"
+      }' 2>&1)
+    
+    if echo "$CH_RESULT" | grep -q "success\|Datasource added\|id"; then
+        echo "✓ ClickHouse datasource created"
+    else
+        echo "⚠ Error creating ClickHouse datasource:"
+        echo "$CH_RESULT"
+    fi
 fi
 
 echo ""

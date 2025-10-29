@@ -28,7 +28,7 @@ flink_jobmanager_desired_size = 1
 
 # Pulsar configuration
 pulsar_zookeeper_desired_size = 3
-pulsar_broker_desired_size = 6  # Combined broker-bookie
+pulsar_broker_desired_size = 4  # Combined broker-bookie
 pulsar_proxy_desired_size = 3
 
 # ClickHouse configuration

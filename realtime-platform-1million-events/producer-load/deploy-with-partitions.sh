@@ -97,10 +97,10 @@ aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
 echo -e "${GREEN}✓ kubectl configured${NC}"
 echo ""
 
-# Check if image is built
-if ! grep -q "dkr.ecr" producer-statefulset-perf.yaml; then
-    echo -e "${RED}ERROR: producer-statefulset-perf.yaml doesn't have ECR image URL${NC}"
-    echo -e "${YELLOW}Please run ./build-and-push.sh first!${NC}"
+# Check if image is built (accept both ECR and GHCR)
+if ! grep -q -E "(dkr\.ecr|ghcr\.io)" producer-statefulset-perf.yaml; then
+    echo -e "${RED}ERROR: producer-statefulset-perf.yaml doesn't have a valid container image URL${NC}"
+    echo -e "${YELLOW}Please ensure the image is set to either ECR or GHCR${NC}"
     exit 1
 fi
 

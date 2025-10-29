@@ -167,7 +167,7 @@ locals {
 
   pulsar_broker_bookie_config = {
     name = "pulsar-broker-bookie"
-    instance_types = ["i7i.8xlarge"]
+    instance_types = ["i3en.6xlarge"]
     capacity_type  = var.use_spot_instances ? "SPOT" : "ON_DEMAND"
     min_size     = 4
     max_size     = 8
@@ -295,7 +295,7 @@ locals {
 
   clickhouse_nodes_config = {
     name = "clickhouse"
-    instance_types = ["r6id.4xlarge"]
+    instance_types = ["r6id.xlarge"]
     capacity_type  = var.use_spot_instances ? "SPOT" : "ON_DEMAND"
     min_size     = 6
     max_size     = 12

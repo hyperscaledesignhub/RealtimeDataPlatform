@@ -103,6 +103,105 @@ EOF
 fi
 echo ""
 
+# Create local-nvme StorageClass for Pulsar BookKeeper
+echo -e "${YELLOW}Creating local-nvme StorageClass for Pulsar...${NC}"
+if kubectl get storageclass local-nvme &> /dev/null; then
+    echo -e "${GREEN}✅ local-nvme StorageClass already exists${NC}"
+else
+    cat <<EOF | kubectl apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-nvme
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+EOF
+    echo -e "${GREEN}✅ local-nvme StorageClass created${NC}"
+fi
+echo ""
+
+# Create PersistentVolumes for BookKeeper NVMe storage
+echo -e "${YELLOW}Creating PersistentVolumes for BookKeeper NVMe storage...${NC}"
+
+# Get the broker-bookie node hostnames dynamically
+BOOKIE_NODES=($(kubectl get nodes -l node-type=broker-bookie -o jsonpath='{.items[*].metadata.name}' 2>/dev/null))
+BOOKIE_NODE_COUNT=${#BOOKIE_NODES[@]}
+
+if [ "$BOOKIE_NODE_COUNT" -eq 0 ]; then
+    echo -e "${RED}❌ No broker-bookie nodes found with label node-type=broker-bookie${NC}"
+    echo -e "${YELLOW}⚠️  Skipping PersistentVolume creation${NC}"
+else
+    echo -e "${GREEN}Found ${BOOKIE_NODE_COUNT} broker-bookie nodes${NC}"
+    
+    # Create PVs for each bookie (0 to NODE_COUNT-1)
+    for i in $(seq 0 $((BOOKIE_NODE_COUNT - 1))); do
+      NODE_NAME="${BOOKIE_NODES[$i]}"
+      echo -e "${CYAN}Creating PVs for node ${i}: ${NODE_NAME}${NC}"
+      # Create Journal PV
+      if kubectl get pv pulsar-bookie-journal-pulsar-bookie-${i} &> /dev/null; then
+        echo -e "${GREEN}✅ PV pulsar-bookie-journal-pulsar-bookie-${i} already exists${NC}"
+      else
+        cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pulsar-bookie-journal-pulsar-bookie-${i}
+spec:
+  capacity:
+    storage: 1700Gi
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-nvme
+  local:
+    path: /mnt/bookkeeper-journal
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - ${NODE_NAME}
+EOF
+        echo -e "${GREEN}✅ Created PV pulsar-bookie-journal-pulsar-bookie-${i}${NC}"
+      fi
+      
+      # Create Ledgers PV
+      if kubectl get pv pulsar-bookie-ledgers-pulsar-bookie-${i} &> /dev/null; then
+        echo -e "${GREEN}✅ PV pulsar-bookie-ledgers-pulsar-bookie-${i} already exists${NC}"
+      else
+        cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pulsar-bookie-ledgers-pulsar-bookie-${i}
+spec:
+  capacity:
+    storage: 1700Gi
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-nvme
+  local:
+    path: /mnt/bookkeeper-ledgers
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - ${NODE_NAME}
+EOF
+        echo -e "${GREEN}✅ Created PV pulsar-bookie-ledgers-pulsar-bookie-${i}${NC}"
+      fi
+    done
+    echo -e "${GREEN}✅ All ${BOOKIE_NODE_COUNT} PersistentVolumes created (${BOOKIE_NODE_COUNT} journal + ${BOOKIE_NODE_COUNT} ledgers)${NC}"
+fi
+echo ""
+
 # Verify local Pulsar chart exists
 echo -e "${YELLOW}Checking for local Pulsar chart...${NC}"
 if [ ! -d "helm/pulsar" ]; then

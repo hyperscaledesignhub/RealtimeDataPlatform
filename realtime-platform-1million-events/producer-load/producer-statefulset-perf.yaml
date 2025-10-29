@@ -29,7 +29,7 @@ spec:
       
       containers:
       - name: perf-producer
-        image: 343218179954.dkr.ecr.us-west-2.amazonaws.com/bench-low-infra-iot-perf-producer:latest
+        image: ghcr.io/hyperscaledesignhub/iot-perf-producer:latest
         imagePullPolicy: Always
         
         # Use entrypoint script for device ID distribution
